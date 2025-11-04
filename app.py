@@ -16,10 +16,13 @@ df['code'] = df["code"].astype(str).str.zfill(6)
 input = st.text_input('input text')
 df_filterd = pd.DataFrame()
 if input:
-    df_filterd = df[(df['code'].str.contains(input)) | df['name'].str.contains(input) | df['initial'].str.contains(input.upper())]
+    df_filterd = df[(df['code'].str.contains(input, regex=False)) | 
+                    df['name'].str.contains(input, regex=False) | df['initial'].str.contains(input.upper(), regex=False)]
 
 if not df_filterd.empty:
     st.dataframe(df_filterd)
+else:
+    st.error('no stock found')
 
 
 st.title("my title")
