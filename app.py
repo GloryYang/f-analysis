@@ -8,22 +8,34 @@ import pandas as pd
 def get_df():
     df=pd.read_csv('stock_list1.csv', header=0)
     return df
-st.set_page_config(page_title="page tile", layout="wide")
 
+st.set_page_config(page_title="📈Finicial Report", layout="wide")
+st.title("📈Finiacal Reprot Analysis")
 
-df = get_df()
-df['code'] = df["code"].astype(str).str.zfill(6)
-input = st.text_input('input text')
-df_filterd = pd.DataFrame()
-if input:
-    df_filterd = df[(df['code'].str.contains(input, regex=False)) | 
-                    df['name'].str.contains(input, regex=False) | df['initial'].str.contains(input.upper(), regex=False)]
+# =========================== stock list filter ================================================
+# get stock list df
+df_stock_list = get_df()
+df_stock_list['code'] = df_stock_list["code"].astype(str).str.zfill(6)
 
-if not df_filterd.empty:
-    st.dataframe(df_filterd)
-else:
-    st.error('no stock found')
+input_stock_code = st.text_input("ℹ️Please input stock code, name or initial (eg: 300416 or 汤臣倍健 or tcbj):")
 
+df_stock_list_filterd = pd.DataFrame()
+# filter df_stock_list with input as filter condition
+input_stock_code = input_stock_code.strip()
+if input_stock_code:
+    # filter df with input
+    df_stock_list_filterd = df_stock_list[(df_stock_list['code'].str.contains(input_stock_code, regex=False)) | 
+                    df_stock_list['name'].str.contains(input_stock_code, regex=False) | df_stock_list['initial'].str.contains(input_stock_code.upper(), regex=False)]
+    df_stock_list_filterd.reset_index(drop=True, inplace=True)
+    df_stock_list_filterd.index += 1
+    # show df_stock_list_filterd if not empty else show "no stock found"
+    if not df_stock_list_filterd.empty:
+        st.dataframe(df_stock_list_filterd, width="content", 
+                     height=len(df_stock_list_filterd)*35 if len(df_stock_list_filterd)<5 else 6*35) # row height is 35
+    else:
+        st.error('no stock found')
+st.markdown("---")
+# ========================================================================
 
 st.title("my title")
 st.header("my header")
