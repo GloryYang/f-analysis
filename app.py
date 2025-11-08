@@ -72,7 +72,7 @@ def get_cash_sheet_by_quarterly(code: str, source: str = 'ths') -> pd.DataFrame:
     
 # thread function to get report
 def get_all_reports_concurrently(code: str, source: str = 'ths', max_worker: int =5) -> Dict[str, pd.DataFrame]:
-    # five reports as tasks
+    # five reports as 
     tasks = [('balance_sheet_by_report', get_balance_sheet_by_report, (code, source)),
              ('profit_sheet_by_report', get_profit_sheet_by_report, (code, source)),
              ('profit_sheet_by_quarterly', get_profit_sheet_by_quarterly, (code, source)),
@@ -82,13 +82,19 @@ def get_all_reports_concurrently(code: str, source: str = 'ths', max_worker: int
     results= {}
     futures_to_tasks = {}
     with ThreadPoolExecutor(max_workers=max_worker) as executor:
-            for t in tasks:
-                # futures_to_tasks = {executor.submit(t[1], *t[2]): t[0]}
-                futures_to_tasks[executor.submit(t[1], *t[2])]= t[0]
+            for name, func, args in tasks:
+                futures_to_tasks[executor.submit(func, *args)] = name
+            # futures_to_tasks = {executor.submit(func, *args): name for name, func, args in tasks}
 
     
     for future in as_completed(futures_to_tasks.keys()):
-        results[futures_to_tasks[future]] = future.result()
+        report_name = futures_to_tasks[future]
+        try:
+            results[report_name] = future.result()
+        except Exception as e:
+            # 捕获异常，返回空 DataFrame
+            st.error(f"❌ {report_name}（{source}）抓取失败：{str(e)}")
+            results[report_name] = pd.DataFrame()
 
     return results
 
@@ -153,7 +159,7 @@ st.subheader(f'📊 {stock_name}({stock_code}) 财务报表分析') # get stock 
 
 with st.spinner("⏳ 正在下载数据，请稍候..."):
     # stock_balance_sheet_by_report = get_balance_sheet_by_report(stock_code, DATA_SOURCE[st_data_source])
-    reports = get_all_reports_concurrently(st_stock_code, st_data_source)
+    reports = get_all_reports_concurrently(stock_code, st_data_source)
 st.success("✅ 数据下载完成！")
 
 for name, df in reports.items():
@@ -162,4 +168,4 @@ for name, df in reports.items():
         df.columns = df.iloc[0]
         df = df.iloc[2:]
         st.dataframe(df)
-print({name: "xx" for name in df.columns})
+
