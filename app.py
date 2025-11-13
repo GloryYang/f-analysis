@@ -186,6 +186,8 @@ with st.spinner("⏳ 正在下载数据，请稍候..."):
     reports = get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source])
 st.success("✅ 数据下载完成！")
 
+s1={PROFIT_BY_REPORT:1,BALANCE_BY_REPORT:2,CASH_BY_REPORT:3}
+reports=dict(sorted(reports.items(),key=lambda x: s1.get(x[0])))
 # 先格式化来自(ths, em, sina)的财务报表，统一格式，方便后续进行操作
 for report_name, df in reports.items():
     reports[report_name] = format_report(df, df_col_maps=col_maps_dict[report_name], source=DATA_SOURCE[st_data_source])
