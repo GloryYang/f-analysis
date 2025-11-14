@@ -21,9 +21,10 @@ DATA_SOURCE = {'ths': 'ths', 'east money': 'em', 'sina': 'sina'}
 # CASH_BY_QUARTER = 'cash_sheet_by_quarter'
 BALANCE_BY_REPORT = '资产负债表-报告期'
 PROFIT_BY_REPORT = '利润表-报告期'
-PROFIT_BY_QUARTER = '利润表-季度'
 CASH_BY_REPORT = '现金流量表-报告期'
-CASH_BY_QUARTER = '现金流量表-季度'
+
+PROFIT_BY_QUARTER = '利润表-单季度'
+CASH_BY_QUARTER = '现金流量表-单季度'
 
 @st.cache_data
 def get_stock_list() -> pd.DataFrame:
@@ -91,18 +92,18 @@ def get_cash_sheet_by_quarterly(code: str, source: str = 'ths') -> pd.DataFrame:
         return pd.DataFrame()
     
 # thread function to get report
-def get_all_reports_concurrently(code: str, source: str = 'ths', max_worker: int =3) -> dict[str, pd.DataFrame]:
+def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd.DataFrame]:
     # five reports as 
-    tasks = [(BALANCE_BY_REPORT, get_balance_sheet_by_report, (code, source)),
+    tasks = [
              (PROFIT_BY_REPORT, get_profit_sheet_by_report, (code, source)),
             #  (PROFIT_BY_QUARTER, get_profit_sheet_by_quarterly, (code, source)),
-             (CASH_BY_REPORT,get_cash_sheet_by_report, (code, source))
+             (CASH_BY_REPORT,get_cash_sheet_by_report, (code, source)),
             #  (CASH_BY_QUARTER, get_cash_sheet_by_quarterly, (code, source))
-             ]
+             (BALANCE_BY_REPORT, get_balance_sheet_by_report, (code, source))]
 
     results= {}
     futures_to_tasks = {}
-    with ThreadPoolExecutor(max_workers=max_worker) as executor:
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
             for name, func, args in tasks:
                 futures_to_tasks[executor.submit(func, *args)] = (name,func.__name__, *args)
             # futures_to_tasks = {executor.submit(func, *args): name for name, func, args in tasks}
@@ -117,7 +118,9 @@ def get_all_reports_concurrently(code: str, source: str = 'ths', max_worker: int
             # 捕获异常，返回空 DataFrame
             st.error(f"❌ {report_name}下载失败，参数 （{code}，{source}）。错误代码：{str(e)}")
             results[report_name] = pd.DataFrame()
-
+    
+    # sort reports in results
+    results = {report_name: results[report_name] for report_name, _, _ in tasks}
     return results
 
 
@@ -186,8 +189,6 @@ with st.spinner("⏳ 正在下载数据，请稍候..."):
     reports = get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source])
 st.success("✅ 数据下载完成！")
 
-s1={PROFIT_BY_REPORT:1,BALANCE_BY_REPORT:2,CASH_BY_REPORT:3}
-reports=dict(sorted(reports.items(),key=lambda x: s1.get(x[0])))
 # 先格式化来自(ths, em, sina)的财务报表，统一格式，方便后续进行操作
 for report_name, df in reports.items():
     reports[report_name] = format_report(df, df_col_maps=col_maps_dict[report_name], source=DATA_SOURCE[st_data_source])
@@ -196,7 +197,7 @@ for report_name, df in reports.items():
 with st.sidebar:
     # 找到所有 df 的最小和最大年份
     all_years = pd.concat([df['报告期'] for df in reports.values()])
-    all_years = pd.to_datetime(all_years, errors='coerce')
+    # all_years = pd.to_datetime(all_years, errors='coerce')
     min_year = all_years.dt.year.min()
     max_year = all_years.dt.year.max()
     # slider 默认值设为全范围
@@ -206,27 +207,49 @@ with st.sidebar:
         max_value=int(max_year),
         value=(int(max_year)-5, int(max_year))  # 默认选中整个范围
     )
-    st_na_invisible = st.checkbox('不显示空行', True)
+    st_na_invisible = st.checkbox('🙈隐藏空行', True)
     # 只显示col_maps.xlsx中的item列
-    st_show_col_maps_only = st.checkbox('只显示col_maps中的列', True)
+    st_show_col_maps_only = st.checkbox('🙈隐藏没在col_maps中的列', True)
 
+reports_quarter = {}
 for report_name, df in reports.items():
     with st.expander(f'{report_name}'):
         #  # 根据 slider 选择的年份过滤
         start_year, end_year = st_years_filter
         df_filtered = df[df['报告期'].dt.year.between(start_year, end_year)]
-        # 格式化'报告期'列显示格式
-        df_filtered = df_filtered.assign(报告期=df_filtered['报告期'].dt.strftime('%Y-%m-%d'))
         if st_na_invisible:
             df_filtered = df_filtered.dropna(how='all', axis=1)
         # 只显示col_maps中的item列
         if st_show_col_maps_only:
             df_filtered = df_filtered[[col for col in col_maps_dict[report_name]['item'] if col in df_filtered.columns]]
-        
+
+        # 计算过滤后df单季度的净利润和现金流报告
+        if report_name == PROFIT_BY_REPORT:
+            reports_quarter[PROFIT_BY_QUARTER] = get_quarter_report(df_filtered, '报告期')
+        if report_name == CASH_BY_REPORT:
+            reports_quarter[CASH_BY_QUARTER] = get_quarter_report(df_filtered, '报告期')
+
+        # 格式化'报告期'列显示格式
+        df_filtered = df_filtered.assign(报告期=df_filtered['报告期'].dt.strftime('%Y-%m-%d'))
+        df_filtered = df_filtered.map(num_to_str)
         # df转置并设置第一行报告期为列名
         df_filtered = df_filtered.T
         df_filtered.columns = df_filtered.iloc[0]
         df_filtered = df_filtered[1:]
         # 显示，空值替换为 '-'
         st.dataframe(df_filtered.replace(np.nan, '-'))
+
+for report_name, df in reports_quarter.items():
+    with st.expander(f'{report_name}'):
+        df_filtered = df
+        # 格式化'报告期'列显示格式
+        df_filtered = df_filtered.map(num_to_str)
+        df_filtered = df_filtered.assign(报告期=df_filtered['报告期'].dt.strftime('%Y-%m-%d'))
+        # df转置并设置第一行报告期为列名
+        df_filtered = df_filtered.T
+        df_filtered.columns = df_filtered.iloc[0]
+        df_filtered = df_filtered[1:]
+        # 显示，空值替换为 '-'
+        st.dataframe(df_filtered.replace(np.nan, '-'))
+
 
