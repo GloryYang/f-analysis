@@ -254,7 +254,7 @@ df_plot[YEAR] = df_plot['报告期'].dt.year
 #     st.plotly_chart(fig2, width='stretch')
 
 # # 使用multiselect 过滤
-selected = st.multiselect('选择要显示的列：', options=df_plot.select_dtypes(include=['float', 'int']).columns)
+selected = st.multiselect('选择要显示的列：', options=df_plot.select_dtypes(include=['float', 'int']).columns, default=['营业总收入', '毛利润', '核心利润', '净利润'])
 for col in selected: #['营业总收入','净利润']:
     fig1, fig2 = plot_bar_quarter_group_px(df_plot, col)
     st.plotly_chart(fig1, width='stretch', height=10)
