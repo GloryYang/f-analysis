@@ -148,11 +148,28 @@ def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFr
     df_q = pd.concat([df[report_date_col_name], df_q], axis=1)  # 把报告期列加到最前面
     return df_q
 
+def safe_yoy(series, periods=4):
+    """
+    计算同比增长，安全处理零和负数。
+    
+    series: pd.Series，数值列
+    periods: int, 同比的周期（如季度同比用4）
+    """
+    prev = series.shift(periods)
+    
+    def calc(current, previous):
+        if previous == 0:
+            return np.nan  # 避免除零
+        return (current - previous) / abs(previous) * 100  # 用 abs 保证同比符号合理
+    
+    return pd.Series([calc(c, p) for c, p in zip(series, prev)], index=series.index)
+
 
 # plot bar chart grouped by quarter. x is year, y is col data. fig1 is col data, fig2 is data of col.pct_change(-4)
 def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     col_pct = col+'_同比'
-    df[col_pct] = df[col].pct_change(-4)*100
+    #df[col_pct] = df[col].pct_change(-4)*100
+    df[col_pct] = safe_yoy(df[col_pct], periods=4)
     fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', 
                 text=df[col].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
     fig1.update_layout(barmode='group', bargap=0.15,
@@ -245,4 +262,5 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
 
 
     
+
 
