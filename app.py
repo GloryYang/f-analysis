@@ -9,23 +9,6 @@ import time, os, re
 from common import *
 
 
-# data source used by akshare - 'shown on web': 'called by function'
-DATA_SOURCE = {'ths': 'ths', 'east money': 'em', 'sina': 'sina'}
-
-# reports variable include all financial reports dataframe
-# reports = {report_name: report_df, ...}, bellow const used to define report_name
-# BALANCE_BY_REPORT = 'balance_sheet_by_report'
-# PROFIT_BY_REPORT = 'profit_sheet_by_report'
-# PROFIT_BY_QUARTER = 'profit_sheet_by_quarter'
-# CASH_BY_REPORT = 'cash_sheet_by_report'
-# CASH_BY_QUARTER = 'cash_sheet_by_quarter'
-BALANCE_BY_REPORT = '资产负债表-报告期'
-PROFIT_BY_REPORT = '利润表-报告期'
-CASH_BY_REPORT = '现金流量表-报告期'
-
-PROFIT_BY_QUARTER = '利润表-单季度'
-CASH_BY_QUARTER = '现金流量表-单季度'
-
 @st.cache_data
 def get_stock_list() -> pd.DataFrame:
     df=pd.read_csv(r'stock_list1.csv', header=0)
@@ -94,12 +77,12 @@ def get_cash_sheet_by_quarterly(code: str, source: str = 'ths') -> pd.DataFrame:
 # thread function to get report
 def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd.DataFrame]:
     # five reports as 
-    tasks = [
-             (PROFIT_BY_REPORT, get_profit_sheet_by_report, (code, source)),
-            #  (PROFIT_BY_QUARTER, get_profit_sheet_by_quarterly, (code, source)),
+    tasks = [(PROFIT_BY_REPORT, get_profit_sheet_by_report, (code, source)),
              (CASH_BY_REPORT,get_cash_sheet_by_report, (code, source)),
-            #  (CASH_BY_QUARTER, get_cash_sheet_by_quarterly, (code, source))
              (BALANCE_BY_REPORT, get_balance_sheet_by_report, (code, source))]
+            # 单季度数据后面自行计算，不从网上抓取了
+            #  (PROFIT_BY_QUARTER, get_profit_sheet_by_quarterly, (code, source)),
+            #  (CASH_BY_QUARTER, get_cash_sheet_by_quarterly, (code, source))
 
     results= {}
     futures_to_tasks = {}
@@ -119,10 +102,9 @@ def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd
             st.error(f"❌ {report_name}下载失败，参数 （{code}，{source}）。错误代码：{str(e)}")
             results[report_name] = pd.DataFrame()
     
-    # sort reports in results
+    # sort reports in results, 按照代码定义区的定义返回reports
     results = {report_name: results[report_name] for report_name, _, _ in tasks}
     return results
-
 
 
 
@@ -211,47 +193,96 @@ with st.sidebar:
     # 只显示col_maps.xlsx中的item列
     st_show_col_maps_only = st.checkbox('🙈隐藏没在col_maps中的列', True)
 
-reports_quarter = {}
+# 筛选并保存报表数据
 for report_name, df in reports.items():
-    with st.expander(f'{report_name}'):
-        #  # 根据 slider 选择的年份过滤
-        start_year, end_year = st_years_filter
-        df_filtered = df[df['报告期'].dt.year.between(start_year, end_year)]
+    # 将结果保存在变量reports_quarter，方便后续调用，后续不用的话可以把下面语句注释掉
+    if report_name == PROFIT_BY_REPORT:
+        reports_quarter[PROFIT_BY_QUARTER] = get_quarter_report(df, '报告期')
+    if report_name == CASH_BY_REPORT:
+        reports_quarter[CASH_BY_QUARTER] = get_quarter_report(df, '报告期')
+
+    # 1. slider年份筛选
+    start_year, end_year = st_years_filter
+    # 2. 隐藏空值筛选
+    df_filtered = df[df['报告期'].dt.year.between(start_year, end_year)]
+    if st_na_invisible:
+        df_filtered = df_filtered.dropna(how='all', axis=1)
+    # 3. col_maps中item列筛选
+    if st_show_col_maps_only:
+        df_filtered = df_filtered[[col for col in col_maps_dict[report_name]['item'] if col in df_filtered.columns]]
+
+
+    # 将结果保存在变量reports_filtered，方便后续调用，后续不用的话可以把下面语句注释掉
+    reports_filtered[report_name] = df_filtered
+    # 计算过滤后df单季度的净利润和现金流报告
+    # 将结果保存在变量reports_quarter_filtered，方便后续调用，后续不用的话可以把下面语句注释掉
+    if report_name == PROFIT_BY_REPORT:
+        reports_quarter_filtered[PROFIT_BY_QUARTER] = get_quarter_report(df_filtered, '报告期')
+        # 经过单季度get_quarter_report计算可能导致某些行变成na，对单季度数据再次进行dropna筛选
         if st_na_invisible:
-            df_filtered = df_filtered.dropna(how='all', axis=1)
-        # 只显示col_maps中的item列
-        if st_show_col_maps_only:
-            df_filtered = df_filtered[[col for col in col_maps_dict[report_name]['item'] if col in df_filtered.columns]]
+            reports_quarter_filtered[PROFIT_BY_QUARTER] = reports_quarter_filtered[PROFIT_BY_QUARTER].dropna(how='all', axis=1)
+    if report_name == CASH_BY_REPORT:
+        reports_quarter_filtered[CASH_BY_QUARTER] = get_quarter_report(df_filtered, '报告期')
+        if st_na_invisible:
+            reports_quarter_filtered[CASH_BY_QUARTER] = reports_quarter_filtered[CASH_BY_QUARTER].dropna(how='all', axis=1)
+        
 
-        # 计算过滤后df单季度的净利润和现金流报告
-        if report_name == PROFIT_BY_REPORT:
-            reports_quarter[PROFIT_BY_QUARTER] = get_quarter_report(df_filtered, '报告期')
-        if report_name == CASH_BY_REPORT:
-            reports_quarter[CASH_BY_QUARTER] = get_quarter_report(df_filtered, '报告期')
 
-        # 格式化'报告期'列显示格式
-        df_filtered = df_filtered.assign(报告期=df_filtered['报告期'].dt.strftime('%Y-%m-%d'))
-        df_filtered = df_filtered.map(num_to_str)
-        # df转置并设置第一行报告期为列名
-        df_filtered = df_filtered.T
-        df_filtered.columns = df_filtered.iloc[0]
-        df_filtered = df_filtered[1:]
-        # 显示，空值替换为 '-'
-        st.dataframe(df_filtered.replace(np.nan, '-'))
+df_profit = reports_quarter_filtered[PROFIT_BY_QUARTER]
+df_profit['毛利润'] = df_profit.eval("`营业总收入` - `营业成本`")
+df_profit['核心利润'] = df_profit.eval(
+    "`营业总收入` - `营业税金及附加` - `销售费用` - "
+    "`管理费用` - `研发费用` - `财务费用`")
+# 找到“营业总收入”的位置
+idx = df_profit.columns.get_loc('营业总收入')
+# 插入“毛利润”，位置在营业总收入后面
+df_profit.insert(idx + 1, '毛利润', df_profit.pop('毛利润'))
+# 再插入“核心利润”，放在毛利润后面
+df_profit.insert(idx + 2, '核心利润', df_profit.pop('核心利润'))
 
-for report_name, df in reports_quarter.items():
+
+df_plot = reports_quarter_filtered[PROFIT_BY_QUARTER].copy()
+df_plot[QUARTER] = df_plot['报告期'].dt.quarter.map(lambda x: f'Q{x}')
+df_plot[YEAR] = df_plot['报告期'].dt.year
+
+# print(df_plot.select_dtypes(include=['float', 'int']).info())
+# # 显示所有数字列
+# for col in df_plot.select_dtypes(include=['float', 'int']).columns: #['营业总收入','净利润']:
+#     fig1, fig2 = plot_bar_quarter_group_px(df_plot, col)
+#     st.plotly_chart(fig1, width='stretch')
+#     st.plotly_chart(fig2, width='stretch')
+
+# # 使用multiselect 过滤
+selected = st.multiselect('选择要显示的列：', options=df_plot.select_dtypes(include=['float', 'int']).columns)
+for col in selected: #['营业总收入','净利润']:
+    fig1, fig2 = plot_bar_quarter_group_px(df_plot, col)
+    st.plotly_chart(fig1, width='stretch')
+    st.plotly_chart(fig2, width='stretch')
+
+for report_name, df in reports_filtered.items():
     with st.expander(f'{report_name}'):
         df_filtered = df
-        if st_na_invisible:
-            df_filtered = df_filtered.dropna(how='all', axis=1)
+        # 下面进行网页显示处理
         # 格式化'报告期'列显示格式
-        df_filtered = df_filtered.map(num_to_str)
-        df_filtered = df_filtered.assign(报告期=df_filtered['报告期'].dt.strftime('%Y-%m-%d'))
+        df_filtered = df_filtered.map(value_to_str)
         # df转置并设置第一行报告期为列名
         df_filtered = df_filtered.T
         df_filtered.columns = df_filtered.iloc[0]
         df_filtered = df_filtered[1:]
         # 显示，空值替换为 '-'
-        st.dataframe(df_filtered.replace(np.nan, '-'))
+        st.dataframe(df.map(value_to_str))
+
+# for report_name, df in reports_quarter_filtered.items():
+#     with st.expander(f'{report_name}'):
+#         df_filtered = df
+#         # 下面进行网页显示处理
+#         # 格式化'报告期'列显示格式
+#         df_filtered = df_filtered.map(value_to_str)
+#         # df转置并设置第一行报告期为列名
+#         df_filtered = df_filtered.T
+#         df_filtered.columns = df_filtered.iloc[0]
+#         df_filtered = df_filtered[1:]
+#         # 显示，空值替换为 '-'
+#         st.dataframe(df_filtered)
 
 
