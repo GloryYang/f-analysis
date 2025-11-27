@@ -237,9 +237,9 @@ df_profit['核心利润'] = df_profit.eval(
 idx = df_profit.columns.get_loc('营业总收入')
 df_profit.insert(idx + 1, '净利润', df_profit.pop('净利润'))
 # 插入“毛利润”，位置在营业总收入后面
-df_profit.insert(idx + 1, '毛利润', df_profit.pop('毛利润'))
+df_profit.insert(idx + 2, '毛利润', df_profit.pop('毛利润'))
 # 再插入“核心利润”，放在毛利润后面
-df_profit.insert(idx + 2, '核心利润', df_profit.pop('核心利润'))
+df_profit.insert(idx + 3, '核心利润', df_profit.pop('核心利润'))
 
 
 df_plot = reports_quarter_filtered[PROFIT_BY_QUARTER].copy()
