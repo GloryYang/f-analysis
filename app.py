@@ -187,7 +187,7 @@ with st.sidebar:
         '选择报表时间范围：',
         min_value=int(min_year),
         max_value=int(max_year),
-        value=(int(max_year)-5, int(max_year))  # 默认选中整个范围
+        value=(int(max_year)-3, int(max_year))  # 默认选中整个范围
     )
     st_na_invisible = st.checkbox('🙈隐藏空行', True)
     # 只显示col_maps.xlsx中的item列
