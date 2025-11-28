@@ -193,7 +193,6 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
         # 可选：调整图表整体字体大小（统一风格）
         font=dict(size=12))
     # 核心修改：调大柱子文字大小 + 优化文字位置
-    位置
     # 按 trace（季度）赋值
     for i, quarter in enumerate(['Q1', 'Q2', 'Q3', 'Q4']):
         mask = df[QUARTER] == quarter
@@ -294,6 +293,7 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
 
 
     
+
 
 
 
