@@ -170,6 +170,17 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     col_pct = col+'_同比'
     #df[col_pct] = df[col].pct_change(-4)*100
     df[col_pct] = safe_yoy(df[col], periods=-4)
+
+    # 你可以按最大值比例设阈值
+    pos_threshold = df[df[col] > 0][col].max() * 0.15 if (df["y"] > 0).any() else 0
+    neg_threshold = df[df[col] < 0][col].min() * 0.15 if (df["y"] < 0).any() else 0
+    def get_textpos(v):
+        if v >= 0:  # 正柱
+            return "inside" if v > pos_threshold else "outside"
+        else:       # 负柱
+            return "inside" if abs(v) > abs(neg_threshold) else "outside"
+    df["textpos"] = df[col].apply(get_textpos)
+    
     fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', height =250,
                 text=df[col].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
     fig1.update_layout(barmode='group', bargap=0.15,
@@ -184,13 +195,23 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     # 核心修改：调大柱子文字大小 + 优化文字位置
     fig1.update_traces(
         textfont_size=20,  # 文字大小（默认约10，根据需求调整，如12/14/16）
-        textposition='outside',  # 文字放在柱子外部（避免内部拥挤）
+        textposition=df["textpos"],  # 文字放在柱子外部（避免内部拥挤）
         textangle=90,  # 文字水平显示（原默认可能倾斜，更易读）
         insidetextanchor='end'  # 若后续改为内部显示，文字居中 [start, end, middle, left, right]
     )
     fig1.update_xaxes(showgrid=True)
     # fig1.update_yaxes(showgrid=True)
 
+    # 你可以按最大值比例设阈值
+    pos_threshold = df[df[col] > 0][col].max() * 0.15 if (df["y"] > 0).any() else 0
+    neg_threshold = df[df[col] < 0][col].min() * 0.15 if (df["y"] < 0).any() else 0
+    def get_textpos(v):
+        if v >= 0:  # 正柱
+            return "inside" if v > pos_threshold else "outside"
+        else:       # 负柱
+            return "inside" if abs(v) > abs(neg_threshold) else "outside"
+    df["textpos"] = df[col].apply(get_textpos)
+    
     # df_pct = df.dropna()
     fig2 = px.bar(df, x=YEAR, y=col_pct, color=QUARTER, barmode='group', height =250,
                 text=df[col_pct].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
@@ -204,7 +225,7 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     # 核心修改：调大柱子文字大小 + 优化文字位置
     fig2.update_traces(
         textfont_size=20,  # 文字大小（默认约10，根据需求调整，如12/14/16）
-        textposition='outside',  # 文字放在柱子外部（避免内部拥挤）
+        textposition=df["textpos"],  # 文字放在柱子外部（避免内部拥挤）
         textangle=90,  # 文字水平显示（原默认可能倾斜，更易读）
         insidetextanchor='end'  # 若后续改为内部显示，文字居中 [start, end, middle, left, right]
     )
@@ -262,6 +283,7 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
 
 
     
+
 
 
 
