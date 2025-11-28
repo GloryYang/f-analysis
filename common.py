@@ -203,14 +203,14 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     # fig1.update_yaxes(showgrid=True)
 
     # 你可以按最大值比例设阈值
-    pos_threshold = df[df[col] > 0][col].max() * 0.15 if (df["y"] > 0).any() else 0
-    neg_threshold = df[df[col] < 0][col].min() * 0.15 if (df["y"] < 0).any() else 0
+    pos_threshold = df[df[col_pct] > 0][col_pct].max() * 0.15 if (df[col_pct] > 0).any() else 0
+    neg_threshold = df[df[col_pct] < 0][col_pct].min() * 0.15 if (df[col_pct] < 0).any() else 0
     def get_textpos(v):
         if v >= 0:  # 正柱
             return "inside" if v > pos_threshold else "outside"
         else:       # 负柱
             return "inside" if abs(v) > abs(neg_threshold) else "outside"
-    df["textpos"] = df[col].apply(get_textpos)
+    df["textpos"] = df[col_pct].apply(get_textpos)
     
     # df_pct = df.dropna()
     fig2 = px.bar(df, x=YEAR, y=col_pct, color=QUARTER, barmode='group', height =250,
@@ -283,6 +283,7 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
 
 
     
+
 
 
 
