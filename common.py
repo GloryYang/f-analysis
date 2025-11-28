@@ -172,8 +172,8 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     df[col_pct] = safe_yoy(df[col], periods=-4)
 
     # 你可以按最大值比例设阈值
-    pos_threshold = df[df[col] > 0][col].max() * 0.15 if (df["y"] > 0).any() else 0
-    neg_threshold = df[df[col] < 0][col].min() * 0.15 if (df["y"] < 0).any() else 0
+    pos_threshold = df[df[col] > 0][col].max() * 0.15 if (df[col] > 0).any() else 0
+    neg_threshold = df[df[col] < 0][col].min() * 0.15 if (df[col] < 0).any() else 0
     def get_textpos(v):
         if v >= 0:  # 正柱
             return "inside" if v > pos_threshold else "outside"
@@ -283,6 +283,7 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
 
 
     
+
 
 
 
