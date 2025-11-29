@@ -166,7 +166,7 @@ def safe_yoy(series, periods=4):
 
 
 # plot bar chart grouped by quarter. x is year, y is col data. fig1 is col data, fig2 is data of col.pct_change(-4)
-def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
+def plot_bar_quarter_group_px(df: pd.DataFrame, col: str, height: int = 300):
     col_pct = col+'_同比'
     #df[col_pct] = df[col].pct_change(-4)*100
     df[col_pct] = safe_yoy(df[col], periods=-4)
@@ -181,7 +181,7 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
             return "inside" if abs(v) > abs(neg_threshold) else "outside"
     df["textpos"] = df[col].apply(get_textpos)
     
-    fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', height =250,
+    fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', height=250,
                 text=df[col].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
     fig1.update_layout(barmode='group', bargap=0.15,
         legend=dict(
@@ -218,7 +218,7 @@ def plot_bar_quarter_group_px(df: pd.DataFrame, col: str):
     df["textpos"] = df[col_pct].apply(get_textpos)
     
     # df_pct = df.dropna()
-    fig2 = px.bar(df, x=YEAR, y=col_pct, color=QUARTER, barmode='group', height =250,
+    fig2 = px.bar(df, x=YEAR, y=col_pct, color=QUARTER, barmode='group', #height=height,
                 text=df[col_pct].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
     fig2.update_layout(barmode='group', bargap=0.15,
         legend=dict(
@@ -293,17 +293,3 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
 
 
     
-
-
-
-
-
-
-
-
-
-
-
-
-
-
