@@ -301,7 +301,7 @@ with tab2_charts:
         ### 使用multiselect 过滤
         cols = df_plot1.select_dtypes(include=['float', 'int']).columns
         # default_cols需要检测要显示的列是否存在，有些数据缺失可能没有计算出这些列（如银行和保险行业）
-        default_cols = [col for col in ['*营业总收入', '*毛利润', '*核心利润', '*净利润', '*归母净利润'] if col in cols]
+        default_cols = [col for col in ['*营业总收入', '*毛利润', '*核心利润', '*净利润', '*归母净利润', '*扣非净利润'] if col in cols]
         st_selected_cols = st.multiselect('选择要显示的列：', options=cols, default=default_cols)
         for col in st_selected_cols:
             fig1 = plot_bar_quarter_go(df_plot1, col, title_suffix='', height=st_chart_height)
@@ -348,7 +348,7 @@ with tab3_tables:
                     column_config={
                     "_index": st.column_config.Column(
                     "序号",  # 可以在这里设置索引列的新标题
-                    width=50,  # 调整宽度，例如 "small", "medium", "large"
+                    width=150,  # 调整宽度，例如 "small", "medium", "large"
                     ),
                     # 也可以在这里配置其他数据列...
                     })
