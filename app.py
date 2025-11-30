@@ -350,7 +350,7 @@ with tab3_tables:
                     column_config={
                     "_index": st.column_config.Column(
                     "序号",  # 可以在这里设置索引列的新标题
-                    width=150,  # 调整宽度，例如 "small", "medium", "large"
+                    width=120,  # 调整宽度，例如 "small", "medium", "large"
                     ),
                     # 也可以在这里配置其他数据列...
                     })
