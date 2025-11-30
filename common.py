@@ -14,27 +14,46 @@ plt.rcParams['axes.unicode_minus'] = False
 # data source used by akshare - 'shown on web': 'called by function'
 # 代码中所有source都是按照这个定义的，web上显示的可以改动，代码调用的是固定的不要改动
 DATA_SOURCE = {'ths': 'ths', 'east money': 'em', 'sina': 'sina'}
-# BALANCE_BY_REPORT = 'balance_sheet_by_report'
-# PROFIT_BY_REPORT = 'profit_sheet_by_report'
-# PROFIT_BY_QUARTER = 'profit_sheet_by_quarter'
-# CASH_BY_REPORT = 'cash_sheet_by_report'
-# CASH_BY_QUARTER = 'cash_sheet_by_quarter'
-BALANCE_BY_REPORT = '资产负债表-报告期'
 PROFIT_BY_REPORT = '利润表-报告期'
 CASH_BY_REPORT = '现金流量表-报告期'
+BALANCE_BY_REPORT = '资产负债表-报告期'
+
 PROFIT_BY_QUARTER = '利润表-单季度'
-CASH_BY_QUARTER = '现金流量表-单季度'   
+CASH_BY_QUARTER = '现金流量表-单季度'
+
+PROFIT_PCT_BY_REPORT = '利润表-报告期同比'
+PROFIT_PCT_BY_QUARTER = '利润表-单季度同比'
+
+# PROFIT = '利润表'
+# CASH = '现金流量表'
+# BALANCE = '资产负债表'
 # 定义用来存储报告的变量 key-报表名字，value-报表数据pd.Dataframe。
 # 报告期数据 reports reports_filtered (使用st.sidebar选项过滤后的数据)，单季度数据 reports_quarter reports_quarter_filtered 
 # reports 使用多线程函数 get_all_reports_concurrently自动生成，这里不需要定义，只需要知道数据格式就行
-# reports = {PROFIT_BY_REPORT: pd.DataFrame(), CASH_BY_REPORT: pd.DataFrame(), BALANCE_BY_REPORT: pd.DataFrame()}
-reports_filtered = {PROFIT_BY_REPORT: pd.DataFrame(), CASH_BY_REPORT: pd.DataFrame(), BALANCE_BY_REPORT: pd.DataFrame()}
-reports_quarter = {PROFIT_BY_QUARTER: pd.DataFrame(), CASH_BY_QUARTER: pd.DataFrame()}
-reports_quarter_filtered = {PROFIT_BY_QUARTER: pd.DataFrame(), CASH_BY_QUARTER: pd.DataFrame()}
+reports = {PROFIT_BY_REPORT: pd.DataFrame(),       # 经过格式化的原始数据
+           CASH_BY_REPORT: pd.DataFrame(),         # 经过格式化的原始数据
+           BALANCE_BY_REPORT: pd.DataFrame(),      # 经过格式化的原始数据
+
+           PROFIT_BY_QUARTER: pd.DataFrame(),      #计算得到的单季度数据
+           CASH_BY_QUARTER: pd.DataFrame(),        #计算得到的单季度数据
+           PROFIT_PCT_BY_REPORT: pd.DataFrame(),   #计算得到利润表报告期同比数据
+           PROFIT_PCT_BY_QUARTER: pd.DataFrame(),  #计算得到利润表单季度同比数据
+           }
+# 经过sidebar选项筛选的报表数据，用于可视化显示
+reports_filtered = {PROFIT_BY_REPORT: pd.DataFrame(),       # 经过格式化的原始数据
+                    CASH_BY_REPORT: pd.DataFrame(),         # 经过格式化的原始数据
+                    BALANCE_BY_REPORT: pd.DataFrame(),      # 经过格式化的原始数据
+
+                    PROFIT_BY_QUARTER: pd.DataFrame(),      #计算得到的单季度数据
+                    CASH_BY_QUARTER: pd.DataFrame(),        #计算得到的单季度数据
+                    PROFIT_PCT_BY_REPORT: pd.DataFrame(),   #计算得到利润表报告期同比数据
+                    PROFIT_PCT_BY_QUARTER: pd.DataFrame(),  #计算得到利润表单季度同比数据
+                    }
 
 # const used to generate quarter and year columns for chart ploting
 YEAR = '年份'
 QUARTER = '季度'
+REPORT_DATE = '报告期'
 # ======================================================================================
 # ======================================================================================
 
@@ -57,7 +76,7 @@ def add_prefix_to_code(code: str) -> str:
 # 带亿等数字文本转纯数字 
 # 用于将ths的原始数据转成纯数字
 def ths_str_to_num(value: str|float|int) -> float:
-    match = re.match(r'^([-+]?\d*\.?\d*)(亿|千万|百万|万|千)?$', str(value).strip())
+    match = re.match(r'^([-+]?\d*\.?\d*)(万亿|亿|千万|百万|万|千)?$', str(value).strip())
     if not match:  # 报告期无法匹配到，直接返回
         return value
     if match.group(2) is None:  # 只有1个捕获组的说明没有汉字单位，转成float
@@ -69,7 +88,7 @@ def ths_str_to_num(value: str|float|int) -> float:
             return float(value)
     num = float(match.group(1))
     unit = match.group(2)
-    unit_map = {'亿': 100000000, '千万': 10000000, '百万': 1000000, '万': 10000, '千': 1000}
+    unit_map = {'万亿':1000000000000, '亿': 100000000, '千万': 10000000, '百万': 1000000, '万': 10000, '千': 1000}
     return num * unit_map[unit]
 
 # 用于st web显示，把df所有值变成string，便于显示
@@ -79,6 +98,8 @@ def value_to_str(value: float|int|str) -> str:
         return '-'
     # 处理数字类型
     if isinstance(value, (int, float)):
+        if abs(value)>1e12:
+            return f'{value/1e12:.2f}万亿'
         if abs(value)>1e8:
             return f'{value/1e8:.2f}亿'
         # elif abs(value)>1e6:
@@ -106,27 +127,28 @@ def format_report(df: pd.DataFrame, df_col_maps: pd.DataFrame, source: str='em')
     #根据source值赋值col_maps, key为source列，value为item列
     col_maps = df_col_maps.set_index(source)['item'].to_dict()
     # col_maps = dict(zip(df_col_maps[source], df_col_maps['item']))
-    #按col_maps,重命名报表的列名，形成统一的报表列名
+    ### 按col_maps,重命名报表的列名，形成统一的报表列名
     df = df.rename(columns={k:v for k, v in col_maps.items() if k !=None and k in df.columns})
     # 只取col_maps中存在的列(用col_maps.values()内容排序)，其余列可加上或过滤掉
     col_orders = [c for c in col_maps.values() if c in df.columns] + [c for c in df.columns if c not in col_maps.values()]
     df = df[col_orders]
-    # '报告期'列格式化成datetime，后面不能加.dt.strftime('%Y-%m-%d')，否则会变成str类型，不能再调用dt函数
-    df['报告期'] = pd.to_datetime(df['报告期'], errors='coerce')
+    ### '报告期'列格式化成datetime，后面不能加.dt.strftime('%Y-%m-%d')，否则会变成str类型，不能再调用dt函数
+    df[REPORT_DATE] = pd.to_datetime(df[REPORT_DATE], errors='coerce')
 
-    # remove east money YOY lines
+    ### em数据转换，remove east money YOY lines,
     if(source=='em'):
         df = df[[col for col in df.columns if not col.endswith('YOY')]]
         # format number to float
         df = df.map(lambda v: float(v) if isinstance(v, (float, int)) else v)
-    # convet ths data to number
+    ### ths数据处理，convet ths data to number
     if(source=='ths'):
         # ths 原始数据空值为False，把False用np.nan替代。replace和mask都可以实现
         # df = df.replace(False, np.nan)
         df = df.mask(df==False, np.nan)
-        # ths 原始数据包含亿和万等中文字符，需要用函数str_to_num转成纯数字
-        # ths利润表 资产减值损失，信用减值损 的取值与em和sina是反的，用的话需要取反
+        # ths 原始数据包含亿和万等中文字符，需要用函数ths_str_to_num转成纯数字
+        # ths利润表 资产减值损失，信用减值损 的取值与em和sina是反的，用的话需要取反，这里暂时没处理
         df = df.map(ths_str_to_num)
+    ### sina数据处理
     if(source=='sina'):
         # format number to float
         df = df.map(lambda v: float(v) if isinstance(v, (float, int)) else v)
@@ -148,7 +170,7 @@ def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFr
     df_q = pd.concat([df[report_date_col_name], df_q], axis=1)  # 把报告期列加到最前面
     return df_q
 
-def safe_yoy(series, periods=4):
+def safe_yoy(series: pd.Series, periods: int =-4) -> pd.Series:
     """
     计算同比增长，安全处理零和负数。
     
@@ -156,94 +178,195 @@ def safe_yoy(series, periods=4):
     periods: int, 同比的周期（如季度同比用4）
     """
     prev = series.shift(periods)
-    
     def calc(current, previous):
         if previous == 0:
             return np.nan  # 避免除零
         return (current - previous) / abs(previous) * 100  # 用 abs 保证同比符号合理
-    
     return pd.Series([calc(c, p) for c, p in zip(series, prev)], index=series.index)
 
 
+def plot_bar_quarter_go(df: pd.DataFrame, col: str, title_suffix: str = '', height: int = 300) -> go.Figure:
+    """
+    plot bar quarter with group mode
+
+    :param df: df need to be ploted. col is used as y data, x data is got from year of REPORT_DATE.
+    :param col: con in df for y data
+    :param title_suffix: col column name is used as title, title_sufifx is used as suffix if it's not ''.
+    :param height: height of the chart
+    """
+    df = df.copy()
+    df[QUARTER] = df[REPORT_DATE].dt.quarter.map(lambda x: f'Q{x}')
+    df[YEAR] = df[REPORT_DATE].dt.year
+    ### 根据col的数值大小计算文本显示在柱体外部的阈值, 阈值按照最大值的abs来设置
+    threshold = df[col].abs().max() * 0.3
+    df["textpos"] = df[col].apply(lambda val: 'inside' if abs(val)>threshold else 'outside')
+    ### 定义颜色映射（可自定义）
+    color_map = {'Q1':'#636EFA','Q2':'#EF553B','Q3':'#00CC96','Q4':'#AB63FA'}
+    ### 画出bar图并进行显示设置
+    fig1 = go.Figure()
+    # 分组绘制每个季度
+    for quarter in ['Q1','Q2','Q3','Q4']:
+        df_q = df[df[QUARTER] == quarter]
+        fig1.add_trace(go.Bar(
+            x=df_q[YEAR],
+            y=df_q[col],
+            name=quarter,
+            text=df_q[col].map(value_to_str),  # 可以用 value_to_str 替代
+            # textposition='inside',      # 一直 inside
+            # insidetextanchor='middle',
+            cliponaxis=False,           # 不裁剪文字
+            marker_color=color_map[quarter]
+        ))
+    # fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', height=height,
+    #             text=df[col].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
+    fig1.update_layout(barmode='group', bargap=0.15,
+        height = height,
+        # 设置legend
+        legend=dict(
+            x=0,
+            y=1,                # 往上移（>1 代表在绘图区上方）
+            orientation="h",      # 水平放置
+            yanchor="bottom",     # legend 底部对准 y=1
+            xanchor="left",
+            ),
+        # 设置图表title
+        title=dict(
+            text=f'{col}-{title_suffix}' if title_suffix else col,      # 用 ytitle 当作图表标题
+            x=0.5,           # x=0.5居中, x=1 最右侧
+            xanchor='center',
+            yanchor='top',
+            font=dict(size=12)),
+        # 不显示x和y轴title
+        yaxis_title=None,
+        xaxis_title=None,
+        uniformtext_minsize=11,     # 字体最小不能低于 12
+        uniformtext_mode='show'     # 强制显示，不自动缩放
+        )
+    ### 设置bar上文本的位置，根据阈值计算的结果，按照trace来设置每个柱子文本显示的位置
+    for i, quarter in enumerate(['Q1', 'Q2', 'Q3', 'Q4']):
+        mask = df[QUARTER] == quarter
+        fig1.data[i].textposition = df.loc[mask, "textpos"]
+    # Plotly 在 group bars（分组柱状图）里，会把同一年份多个季度的柱子拆成多条 trace。
+    fig1.update_traces(
+        textfont_size=12,  # 文字大小（默认约10，根据需求调整，如12/14/16）
+        # textposition='inside',  # 文字放在柱子外部（避免内部拥挤），根据threashold来设置
+        textangle=90,  # 文字水平显示（原默认可能倾斜，更易读）
+        insidetextanchor='end'  # 若后续改为内部显示，文字居中 [start, end, middle, left, right]
+    )
+    fig1.update_xaxes(showgrid=True)
+    # fig1.update_yaxes(showgrid=True)
+    return fig1
+
+
+
 # plot bar chart grouped by quarter. x is year, y is col data. fig1 is col data, fig2 is data of col.pct_change(-4)
-def plot_bar_quarter_group_px(df: pd.DataFrame, col: str, height: int = 300):
+def plot_bar_quarter_with_pct_go(df: pd.DataFrame, col: str, height: int = 300):
+    ### 计算同比数据
     col_pct = col+'_同比'
     #df[col_pct] = df[col].pct_change(-4)*100
     df[col_pct] = safe_yoy(df[col], periods=-4)
 
-    # 你可以按最大值比例设阈值
-    pos_threshold = df[df[col] > 0][col].max() * 0.3 if (df[col] > 0).any() else 0
-    neg_threshold = df[df[col] < 0][col].min() * 0.3 if (df[col] < 0).any() else 0
-    def get_textpos(v):
-        if v >= 0:  # 正柱
-            return "inside" if v > pos_threshold else "outside"
-        else:       # 负柱
-            return "inside" if abs(v) > abs(neg_threshold) else "outside"
-    df["textpos"] = df[col].apply(get_textpos)
-    
-    fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', height=250,
+    fig1 = plot_bar_quarter_go(df, col, height)
+    fig2 = plot_bar_quarter_go(df, col_pct, height)
+    return fig1, fig2
+
+
+'''
+# px柱体上文字显示的效果不是很好，文字显示到画布以外就看不到了
+# plot bar chart grouped by quarter. x is year, y is col data. fig1 is col data, fig2 is data of col.pct_change(-4)
+def plot_bar_quarter_with_pct_px(df: pd.DataFrame, col: str, height: int = 300):
+    ### 计算同比数据
+    col_pct = col+'_同比'
+    #df[col_pct] = df[col].pct_change(-4)*100
+    df[col_pct] = safe_yoy(df[col], periods=-4)
+
+    ### 根据col的数值大小计算文本显示在柱体外部的阈值, 阈值按照最大值的abs来设置
+    threshold = df[col].abs().max() * 0.3
+    df["textpos"] = df[col].apply(lambda val: 'inside' if abs(val)>threshold else 'outside')
+    ### 画出bar图并进行显示设置
+    fig1 = px.bar(df, x=YEAR, y=col, color=QUARTER, barmode='group', height=height,
                 text=df[col].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
     fig1.update_layout(barmode='group', bargap=0.15,
+        # 设置legend
         legend=dict(
+            x=0,
+            y=1,                # 往上移（>1 代表在绘图区上方）
             orientation="h",      # 水平放置
             yanchor="bottom",     # legend 底部对准 y=1
-            y=1,                # 往上移（>1 代表在绘图区上方）
             xanchor="left",
-            x=0),
-        # 可选：调整图表整体字体大小（统一风格）
-        font=dict(size=12))
-    # 核心修改：调大柱子文字大小 + 优化文字位置
+            ),
+        # 设置图表title
+        title=dict(
+            text=col,      # 用 ytitle 当作图表标题
+            x=1,           # x=0.5居中, x=1 最右侧
+            xanchor='right',
+            yanchor='top',
+            font=dict(size=12)),
+        # 不显示x和y轴title
+        yaxis_title=None,
+        xaxis_title=None,
+        uniformtext_minsize=12,     # 字体最小不能低于 12
+        uniformtext_mode='show'     # 强制显示，不自动缩放
+        )
+    ### 根据阈值计算的结果，按照trace来设置每个柱子文本显示的位置
     # 按 trace（季度）赋值
     for i, quarter in enumerate(['Q1', 'Q2', 'Q3', 'Q4']):
         mask = df[QUARTER] == quarter
         fig1.data[i].textposition = df.loc[mask, "textpos"]
     # Plotly 在 group bars（分组柱状图）里，会把同一年份多个季度的柱子拆成多条 trace。
     fig1.update_traces(
-        textfont_size=20,  # 文字大小（默认约10，根据需求调整，如12/14/16）
-        #textposition=df["textpos"],  # 文字放在柱子外部（避免内部拥挤）
+        textfont_size=12,  # 文字大小（默认约10，根据需求调整，如12/14/16）
+        #textposition='inside',  # 文字放在柱子外部（避免内部拥挤）
         textangle=90,  # 文字水平显示（原默认可能倾斜，更易读）
         insidetextanchor='end'  # 若后续改为内部显示，文字居中 [start, end, middle, left, right]
     )
     fig1.update_xaxes(showgrid=True)
     # fig1.update_yaxes(showgrid=True)
 
-    # 你可以按最大值比例设阈值
-    pos_threshold = df[df[col_pct] > 0][col_pct].max() * 0.3 if (df[col_pct] > 0).any() else 0
-    neg_threshold = df[df[col_pct] < 0][col_pct].min() * 0.3 if (df[col_pct] < 0).any() else 0
-    def get_textpos(v):
-        if v >= 0:  # 正柱
-            return "inside" if v > pos_threshold else "outside"
-        else:       # 负柱
-            return "inside" if abs(v) > abs(neg_threshold) else "outside"
-    df["textpos"] = df[col_pct].apply(get_textpos)
-    
-    # df_pct = df.dropna()
-    fig2 = px.bar(df, x=YEAR, y=col_pct, color=QUARTER, barmode='group', #height=height,
+
+    ### 根据col的数值大小计算文本显示在柱体外部的阈值, 阈值按照最大值的abs来设置
+    threshold = df[col_pct].abs().max() * 0.3
+    df["textpos"] = df[col_pct].apply(lambda val: 'inside' if abs(val) > threshold else 'outside')
+    ### 画出bar图并进行显示设置
+    fig2 = px.bar(df, x=YEAR, y=col_pct, color=QUARTER, barmode='group', height=height,
                 text=df[col_pct].map(value_to_str), category_orders={QUARTER: ['Q1', 'Q2', 'Q3', 'Q4']})
     fig2.update_layout(barmode='group', bargap=0.15,
+         # 设置legend
         legend=dict(
+            x=0,
+            y=1,                # 往上移（>1 代表在绘图区上方）
             orientation="h",      # 水平放置
             yanchor="bottom",     # legend 底部对准 y=1
-            y=1,                # 往上移（>1 代表在绘图区上方）
             xanchor="left",
-            x=0))
-    # 核心修改：调大柱子文字大小 + 优化文字位置
+            ),
+        # 设置图表title
+        title=dict(
+            text=col_pct,      # 用 ytitle 当作图表标题
+            x=1,           # x=0.5居中, x=1 最右侧
+            xanchor='right',
+            yanchor='top',
+            font=dict(size=12)),
+        # 不显示x和y轴title
+        yaxis_title=None,
+        xaxis_title=None,
+        uniformtext_minsize=12,     # 字体最小不能低于 12
+        uniformtext_mode='show'     # 强制显示，不自动缩放
+        )
+    ### 根据阈值计算的结果，按照trace来设置每个柱子文本显示的位置
     # 按 trace（季度）赋值
     for i, quarter in enumerate(['Q1', 'Q2', 'Q3', 'Q4']):
         mask = df[QUARTER] == quarter
         fig2.data[i].textposition = df.loc[mask, "textpos"]
-
     fig2.update_traces(
-        textfont_size=20,  # 文字大小（默认约10，根据需求调整，如12/14/16）
+        textfont_size=12,  # 文字大小（默认约10，根据需求调整，如12/14/16）
         # textposition=df["textpos"],  # 文字放在柱子外部（避免内部拥挤）
         textangle=90,  # 文字水平显示（原默认可能倾斜，更易读）
         insidetextanchor='end'  # 若后续改为内部显示，文字居中 [start, end, middle, left, right]
     )
     fig2.update_xaxes(showgrid=True)
-
     return fig1, fig2
 
-def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
+def plot_bar_quarter_with_pct_plt(df: pd.DataFrame, col: str):
     # 格式化图表上要显示的值
     def val_formatter(val):
         if val==0:
@@ -287,7 +410,7 @@ def plot_bar_quarter_group_plt(df: pd.DataFrame, col: str):
     ax2.grid(axis='both', linestyle='--', alpha=0.5)
 
     return fig1, fig2
-
+'''
 
 
 
