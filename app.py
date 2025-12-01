@@ -81,7 +81,6 @@ def get_cash_sheet_by_quarterly(code: str, source: str = 'ths') -> pd.DataFrame:
         return pd.DataFrame()
     
 # thread function to get report
-@st.cache_data(ttl=3600)
 def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd.DataFrame]:
     # five reports as 
     tasks = [(PROFIT_BY_REPORT, get_profit_sheet_by_report, (code, source)),
@@ -113,59 +112,8 @@ def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd
     results = {report_name: results[report_name] for report_name, _, _ in tasks}
     return results
 
-# 计算报表新列，生成单季度和同比报表, reports使用的是全局变量
-@st.cache_data(ttl=3600)
-def reports_cal(reports_raw: dict, col_maps_dict: dict):
-    reports = {k: v.copy() for k, v in reports_raw.items()}
-    # 先格式化来自(ths, em, sina)的三张原始财务报表，统一格式，方便后续进行操作
-    for report_name in [BALANCE_BY_REPORT, PROFIT_BY_REPORT, CASH_BY_REPORT]:
-        df = reports[report_name]
-        reports[report_name] = format_report(df, df_col_maps=col_maps_dict[report_name], source=DATA_SOURCE[st_data_source])
-
-    ### ==================  计算新的数据列 计算自定义报表df ==================================
-    ### 利润表 先计算新列。然后计算利润表-单季度df，利润表-报告期同比df， 利润表-单季度同比df'，新列会被新的df继承
-    df = reports[PROFIT_BY_REPORT]
-    # 2018年以前 研发费用属于管理费用，没有研发费用这一列，数据都是np.nan，需要用0来填充，否则计算出来的也是np.nan
-    if '营业总收入' in df.columns:
-        df['*营业总收入'] = df['营业总收入']
-    if '研发费用' in df.columns:
-        df['研发费用'] = df['研发费用'].fillna(0)
-    ### 利润表-报告期 中增加新的列
-    if {'营业总收入','营业成本'}.issubset(df.columns):
-        df['*毛利润'] = df.eval("`营业总收入` - `营业成本`")
-    if {'营业总收入', '营业税金及附加', '营业成本', '销售费用', '管理费用', '研发费用', '财务费用'}.issubset(df.columns):
-        df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `营业成本` - `销售费用` - `管理费用` - `研发费用` - `财务费用`")
-    # 2018年以前 研发费用属于管理费用，没有研发费用这一列
-    elif {'营业总收入', '营业税金及附加', '营业成本', '销售费用', '管理费用', '财务费用'}.issubset(df.columns):
-        df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `营业成本` - `销售费用` - `管理费用` -  - `财务费用`")
-    if '净利润' in df.columns:
-        df['*净利润'] = df['净利润']
-    if '归母净利润' in df.columns:
-        df['*归母净利润'] = df['归母净利润']
-    # 需判断key_cols是否在df中存在
-    key_cols = [col for col in ['*营业总收入', '*毛利润', '*核心利润', '*净利润', '*归母净利润'] if col in df.columns]
-    for idx, col in enumerate(key_cols):
-        # 第一列为报告期，关键指标依次插入到报告期后面
-        idx += 1
-        df.insert(idx, col, df.pop(col))
-    # 计算 利润表-单季度df
-    reports[PROFIT_BY_QUARTER] = get_quarter_report(df, REPORT_DATE)
-    ### 计算 利润表-报告期同比df 和 利润表-单季度同比df，添加报告期列，保存到reports[PROFIT_PCT_BY_REPORT]和reports[PROFIT_PCT_BY_QUARTER]
-    reports[PROFIT_PCT_BY_REPORT] = reports[PROFIT_BY_REPORT].select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[PROFIT_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_REPORT] ], axis=1)
-    reports[PROFIT_PCT_BY_QUARTER] = reports[PROFIT_BY_QUARTER].select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[PROFIT_PCT_BY_QUARTER] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_QUARTER] ], axis=1)
-
-    ### 计算 现金流-单季度
-    df= reports[CASH_BY_REPORT]
-    reports[CASH_BY_QUARTER] = get_quarter_report(df, REPORT_DATE)
-    return reports
-    
 
 
-##########################################################################################
-###############################  main start here #########################################
-##########################################################################################
 st.set_page_config(page_title="📈Finicial Report", layout="wide")
 st.title("📈Finiacal Reprot Analysis")
 
@@ -228,13 +176,56 @@ else:
 
 st.subheader(f'📊 {stock_name}({stock_code}) 财务报表分析 - {st_data_source}') # get stock code by stock_selected_row
 
-### ================= 下载三张原始报表，然后格式化报表，生成单季度和同比报表=================================
+### ================= 下载三张原始报表，然后格式化原始报表 =================================
 with st.spinner("⏳ 正在下载数据，请稍候..."):
     # stock_balance_sheet_by_report = get_balance_sheet_by_report(stock_code, DATA_SOURCE[st_data_source])
-    reports_raw = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
+    reports = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
 st.success("✅ 数据下载完成！")
-# 计算报表新列，生成单季度和同比报表，使用cache_data修饰提升运行性能
-reports = reports_cal(reports_raw, col_maps_dict)
+# 先格式化来自(ths, em, sina)的三张原始财务报表，统一格式，方便后续进行操作
+for report_name in [BALANCE_BY_REPORT, PROFIT_BY_REPORT, CASH_BY_REPORT]:
+    df = reports[report_name]
+    reports[report_name] = format_report(df, df_col_maps=col_maps_dict[report_name], source=DATA_SOURCE[st_data_source])
+
+
+### ==================  计算新的数据列 计算自定义报表df ==================================
+### 利润表 先计算新列。然后计算利润表-单季度df，利润表-报告期同比df， 利润表-单季度同比df'，新列会被新的df继承
+df = reports[PROFIT_BY_REPORT]
+# 2018年以前 研发费用属于管理费用，没有研发费用这一列，数据都是np.nan，需要用0来填充，否则计算出来的也是np.nan
+if '营业总收入' in df.columns:
+    df['*营业总收入'] = df['营业总收入']
+if '研发费用' in df.columns:
+    df['研发费用'] = df['研发费用'].fillna(0)
+### 利润表-报告期 中增加新的列
+if {'营业总收入','营业成本'}.issubset(df.columns):
+    df['*毛利润'] = df.eval("`营业总收入` - `营业成本`")
+if {'营业总收入', '营业税金及附加', '销售费用', '管理费用', '研发费用', '财务费用'}.issubset(df.columns):
+    df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `销售费用` - `管理费用` - `研发费用` - `财务费用`")
+# 2018年以前 研发费用属于管理费用，没有研发费用这一列
+elif {'营业总收入', '营业税金及附加', '销售费用', '管理费用', '财务费用'}.issubset(df.columns):
+    df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `销售费用` - `管理费用` -  - `财务费用`")
+if '净利润' in df.columns:
+    df['*净利润'] = df['净利润']
+if '归母净利润' in df.columns:
+    df['*归母净利润'] = df['归母净利润']
+if '扣非净利润' in df.columns:
+    df['*扣非净利润'] = df['扣非净利润']
+# 需判断key_cols是否在df中存在
+key_cols = [col for col in ['*营业总收入', '*毛利润', '*核心利润', '*净利润', '*归母净利润', '*扣非净利润'] if col in df.columns]
+for idx, col in enumerate(key_cols):
+    # 第一列为报告期，关键指标依次插入到报告期后面
+    idx += 1
+    df.insert(idx, col, df.pop(col))
+# 计算 利润表-单季度df
+reports[PROFIT_BY_QUARTER] = get_quarter_report(df, REPORT_DATE)
+### 计算 利润表-报告期同比df 和 利润表-单季度同比df，添加报告期列，保存到reports[PROFIT_PCT_BY_REPORT]和reports[PROFIT_PCT_BY_QUARTER]
+reports[PROFIT_PCT_BY_REPORT] = reports[PROFIT_BY_REPORT].select_dtypes(include=(float, int)).apply(safe_yoy)
+reports[PROFIT_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_REPORT] ], axis=1)
+reports[PROFIT_PCT_BY_QUARTER] = reports[PROFIT_BY_QUARTER].select_dtypes(include=(float, int)).apply(safe_yoy)
+reports[PROFIT_PCT_BY_QUARTER] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_QUARTER] ], axis=1)
+
+### 计算 现金流-单季度
+df= reports[CASH_BY_REPORT]
+reports[CASH_BY_QUARTER] = get_quarter_report(df, REPORT_DATE)
 
 
 ### ==================== sidebar筛选选项 ====================================
@@ -312,7 +303,7 @@ with tab2_charts:
         ### 使用multiselect 过滤
         cols = df_plot1.select_dtypes(include=['float', 'int']).columns
         # default_cols需要检测要显示的列是否存在，有些数据缺失可能没有计算出这些列（如银行和保险行业）
-        default_cols = [col for col in ['*营业总收入', '*毛利润', '*核心利润', '*净利润', '*归母净利润'] if col in cols]
+        default_cols = [col for col in ['*营业总收入', '*毛利润', '*核心利润', '*净利润', '*归母净利润', '*扣非净利润'] if col in cols]
         st_selected_cols = st.multiselect('选择要显示的列：', options=cols, default=default_cols)
         for col in st_selected_cols:
             fig1 = plot_bar_quarter_go(df_plot1, col, title_suffix='', height=st_chart_height)
@@ -355,5 +346,11 @@ with tab3_tables:
             df_filtered.columns = df_filtered.iloc[0]
             df_filtered = df_filtered[1:]
             # 显示，空值替换为 '-'
-            st.dataframe(df_filtered.map(value_to_str))
-
+            st.dataframe(df_filtered.map(value_to_str),
+                    column_config={
+                    "_index": st.column_config.Column(
+                    "序号",  # 可以在这里设置索引列的新标题
+                    width=120,  # 调整宽度，例如 "small", "medium", "large"
+                    ),
+                    # 也可以在这里配置其他数据列...
+                    })
