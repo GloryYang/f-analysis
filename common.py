@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
+import streamlit as st
 
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
@@ -14,6 +16,7 @@ plt.rcParams['axes.unicode_minus'] = False
 # data source used by akshare - 'shown on web': 'called by function'
 # 代码中所有source都是按照这个定义的，web上显示的可以改动，代码调用的是固定的不要改动
 DATA_SOURCE = {'ths': 'ths', 'east money': 'em', 'sina': 'sina'}
+CROSS_REPORT = '综合分析'
 PROFIT_BY_REPORT = '利润表-报告期'
 CASH_BY_REPORT = '现金流量表-报告期'
 BALANCE_BY_REPORT = '资产负债表-报告期'
@@ -23,8 +26,11 @@ CASH_BY_QUARTER = '现金流量表-单季度'
 
 PROFIT_PCT_BY_REPORT = '利润表-报告期同比'
 PROFIT_PCT_BY_QUARTER = '利润表-单季度同比'
+CASH_PCT_BY_REPORT = '现金流量表-报告期同比'
+CASH_PCT_BY_QUARTER = '现金流量表-单季度同比'
+BALANCE_PCT_BY_REPORT = '资产负债表-报告期同比'
 
-CROSS_REPORT = '综合分析'
+
 # PROFIT = '利润表'
 # CASH = '现金流量表'
 # BALANCE = '资产负债表'
@@ -38,8 +44,12 @@ reports = {CROSS_REPORT: pd.DataFrame(),
 
            PROFIT_BY_QUARTER: pd.DataFrame(),      #计算得到的单季度数据
            CASH_BY_QUARTER: pd.DataFrame(),        #计算得到的单季度数据
+
            PROFIT_PCT_BY_REPORT: pd.DataFrame(),   #计算得到利润表报告期同比数据
            PROFIT_PCT_BY_QUARTER: pd.DataFrame(),  #计算得到利润表单季度同比数据
+           CASH_PCT_BY_REPORT: pd.DataFrame(),     #计算得到现金流量表报告期同比数据
+           CASH_PCT_BY_QUARTER: pd.DataFrame(),    #计算得到现金流量表单季度同比数据
+           BALANCE_PCT_BY_REPORT: pd.DataFrame(),  #计算得到资产负债表报告期同比数据
            }
 # 经过sidebar选项筛选的报表数据，用于可视化显示
 reports_filtered = {CROSS_REPORT: pd.DataFrame(),
@@ -49,8 +59,12 @@ reports_filtered = {CROSS_REPORT: pd.DataFrame(),
 
                     PROFIT_BY_QUARTER: pd.DataFrame(),      #计算得到的单季度数据
                     CASH_BY_QUARTER: pd.DataFrame(),        #计算得到的单季度数据
+
                     PROFIT_PCT_BY_REPORT: pd.DataFrame(),   #计算得到利润表报告期同比数据
                     PROFIT_PCT_BY_QUARTER: pd.DataFrame(),  #计算得到利润表单季度同比数据
+                    CASH_PCT_BY_REPORT: pd.DataFrame(),     #计算得到现金流量表报告期同比数据
+                    CASH_PCT_BY_QUARTER: pd.DataFrame(),    #计算得到现金流量表单季度同比数据
+                    BALANCE_PCT_BY_REPORT: pd.DataFrame(),  #计算得到资产负债表报告期同比数据
                     }
 
 # const used to generate quarter and year columns for chart ploting
@@ -162,6 +176,7 @@ def format_report(df: pd.DataFrame, df_col_maps: pd.DataFrame, source: str='em')
 
 # return quarter report. df need to format as number, report_date_col_name need to format as pd.to_datetime
 # 由于sina没有单季度报告的数据供抓取，这里都自行进行计算
+# 注意：某些数据为na的话，计算结果也会na，有些单季度计算出来的数据可能会不准
 def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFrame:
     df_number = df.select_dtypes(include=['float', 'int']).copy()
     # em, ths, sina的时间都是降序，所以用 diff(-1)，axis=0按行处理。所有行都减后面一行的数据。如果原始数据顺序改变，代码要修改
@@ -234,7 +249,7 @@ def plot_bar_quarter_go(df: pd.DataFrame, col: str, title_suffix: str = '', heig
             ),
         # 设置图表title
         title=dict(
-            text=f'{col}-{title_suffix}' if title_suffix else col,      # 用 ytitle 当作图表标题
+            text=f'{col} - {title_suffix}' if title_suffix else col,      # 用 ytitle 当作图表标题
             x=0.5,           # x=0.5居中, x=1 最右侧
             xanchor='center',
             yanchor='top',
@@ -276,6 +291,70 @@ def plot_bar_quarter_with_pct_go(df: pd.DataFrame, col: str, height: int = 300):
     fig2 = plot_bar_quarter_go(df, col_pct, height)
     return fig1, fig2
 
+# 画资产负债表饼图
+# col_maps_dict 报表映射df字典，df_balance [资产负债表-报告期]
+def plot_pie_balance(col_maps_dict, df_balance: pd.DataFrame, height):
+    cols_date = df_balance[REPORT_DATE].dt.strftime('%Y-%m').to_list()
+    st_date = st.selectbox('选择资产负债表饼图日期：', options=cols_date)
+    date_index = cols_date.index(st_date)
+
+    fig = make_subplots(rows=1, cols=2,
+        specs=[[{"type": "domain"}, {"type": "domain"}]],
+        subplot_titles=("资产", "负债"))
+    ### 资产项
+    df_col_map = col_maps_dict[BALANCE_BY_REPORT]
+    cols_asset = df_col_map[(df_col_map['item_group']=='流动资产') | (df_col_map['item_group']=='非流动资产')]['item']
+    cols_asset = [REPORT_DATE] + cols_asset.tolist()
+    df = df_balance[[col for col in cols_asset if col in df_balance.columns]]
+    # st.write(df)
+    colors = px.colors.qualitative.Set3
+    fig1 = go.Figure()
+    fig1.add_trace(go.Pie(labels=df.columns[1:], values=df.iloc[date_index,1:], text=df.iloc[date_index,1:].map(value_to_str),
+            textinfo="label+percent+text",
+            textposition="inside",   # 关键 "auto" "outside"
+            rotation=0,
+            sort=False,
+            outsidetextfont=dict(size=10),
+            insidetextfont=dict(size=14),
+            marker=dict(colors=colors),
+            hovertemplate=
+                "<b>%{label}</b><br>" +
+                "金额：%{text}<br>" +
+                "占比：%{percent:.2%}" +
+                "<extra></extra>"),
+                # row=1, col=1
+                )
+    fig1.update_layout(#legend=dict(x=0.9, y=0, bgcolor="rgba(255,255,255,0.6)"),
+                        margin=dict(l=0, r=0, t=50, b=0, autoexpand=True), height=height)
+    fig1.update_layout(showlegend=False)
+    
+    ### 负债项
+    cols_liab = df_col_map[(df_col_map['item_group']=='流动负债') | (df_col_map['item_group']=='非流动负债')]['item']
+    cols_liab = [REPORT_DATE] + cols_liab.tolist()
+    df = df_balance[[col for col in cols_liab if col in df_balance.columns]]
+    # st.write(df)
+    colors = px.colors.qualitative.Set3
+    fig2 = go.Figure()
+    fig2.add_trace(go.Pie(labels=df.columns[1:], values=df.iloc[date_index,1:], text=df.iloc[date_index,1:].map(value_to_str),
+            textinfo="label+percent+text",
+            textposition="inside",   # 关键 "auto" "outside"
+            rotation=0,
+            sort=False,
+            outsidetextfont=dict(size=10),
+            insidetextfont=dict(size=14),
+            marker=dict(colors=colors),
+            hovertemplate=
+                "<b>%{label}</b><br>" +
+                "金额：%{text}<br>" +
+                "占比：%{percent:.2%}" +
+                "<extra></extra>"),
+                # row=1, col=2
+                )
+    ### 设置显示效果
+    fig2.update_layout(#legend=dict(x=0.9, y=0, bgcolor="rgba(255,255,255,0.6)"),
+                        margin=dict(l=0, r=0, t=50, b=0, autoexpand=True), height=height)
+    fig2.update_layout(showlegend=False)
+    return fig1, fig2
 
 '''
 # px柱体上文字显示的效果不是很好，文字显示到画布以外就看不到了
