@@ -370,7 +370,7 @@ def st_quaters_filter_change():
 
 # 设置年份过滤
 with st.sidebar:
-    st.markdown('---')
+    # st.markdown('---')
     # 拼接三张原始报表的报告期列，获得最大年份和最小年份
     all_years = pd.concat([reports[report_name][REPORT_DATE] for report_name in [PROFIT_BY_REPORT, CASH_BY_REPORT, BALANCE_BY_REPORT]])
     # all_years = pd.to_datetime(all_years, errors='coerce')
@@ -387,8 +387,12 @@ with st.sidebar:
     st_quarters_filter = st.segmented_control('选择显示的季度数据：', options=QUARTERS_OPTION, key='st_quaters_filter', on_change=st_quaters_filter_change, selection_mode='multi')
     st_quarters_filter = [int(q[1]) for q in st_quarters_filter]  # 从Q1中提取季度数字
     st_Q_latest = st.checkbox('最新季度', value=True)
-    st.markdown('---')
+  
+    # checkbox 图表类别中 显示图表的值  显示图表同比
+    st_cb_show_report = st.checkbox('图表显示值', True)
+    st_cb_show_pct = st.checkbox('图表显示同比', True)
 
+    st.markdown('---')
     st_na_invisible = st.checkbox('🙈隐藏空行', True)
     # 只显示col_maps.xlsx中的item列
     st_show_col_maps_only = st.checkbox('🙈隐藏没在col_maps中的列', True)
@@ -463,10 +467,6 @@ def show_report_category():
             ### 避坑：实现multiselect defualt option记忆功能。本控件在if条件下，if在true和false切换后，控件会重新创建，
             # 所以使用key参数的session_state没有记忆功能，重新创建会重新初始化。可以在此处创建一个命名与本控件无关的session变量来保存和调用记忆。
             st_selected_cols = st.multiselect('选择要显示的列：', options=cols, default=default_cols)
-            # checkbox 显示报表 显示同比
-            col1, col2 = st.columns(2, width=300)
-            st_cb_show_report = col1.checkbox('显示报表值', True)
-            st_cb_show_pct = col2.checkbox('显示同比值', True)
             title_suffix = st_report_choice[st_report_choice.index('-')+1::]
             for col in st_selected_cols:
                 if st_cb_show_report:
@@ -490,10 +490,6 @@ def show_report_category():
             default_cols = [col for col in ['销售商品、提供劳务收到的现金', '购建固定资产、无形资产和其他长期资产支付的现金', '取得子公司及其他营业单位支付的现金净额', 
                         '经营活动产生的现金流量净额', '投资活动产生的现金流量净额','筹资活动产生的现金流量净额'] if col in cols]
             st_selected_cols = st.multiselect('请选择要显示的列：', options=cols, default=default_cols)
-            # checkbox 显示报表 显示同比
-            col1, col2 = st.columns(2, width=300)
-            st_cb_show_report = col1.checkbox('显示报表值', True)
-            st_cb_show_pct = col2.checkbox('显示同比值', True)
             title_suffix = st_report_choice[st_report_choice.index('-')+1::]
             for col in st_selected_cols:
                 if st_cb_show_report:
@@ -519,10 +515,6 @@ def show_report_category():
             default_cols = [col for col in ['应收票据及应收账款', '应收款项融资', '存货', 
                         '固定资产合计', '在建工程合计','商誉', '合同负债', '预收款项'] if col in cols]
             st_selected_cols = st.multiselect('请选择要显示的列：', options=cols, default=default_cols)
-            # checkbox 显示报表 显示同比
-            col1, col2 = st.columns(2, width=300)
-            st_cb_show_report = col1.checkbox('显示报表值', True)
-            st_cb_show_pct = col2.checkbox('显示同比值', True)
             title_suffix = st_report_choice[st_report_choice.index('-')+1::]
             for col in st_selected_cols:
                 if st_cb_show_report:
