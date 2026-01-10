@@ -87,6 +87,7 @@ def get_cash_sheet_by_quarterly(code: str, source: str = 'ths') -> pd.DataFrame:
         return pd.DataFrame()
     
 # thread function to get report
+# return value {report_name: report_df, ...}
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd.DataFrame]:
     # five reports as 
@@ -119,16 +120,22 @@ def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd
 
 # 计算报表新列，生成单季度和同比报表, reports使用的是全局变量
 @st.cache_data(ttl=3600, show_spinner=False)
-def reports_cal(reports_raw: dict, col_maps_dict: dict):
+def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps_dict: dict):
+    st.write(f'reprots_cal start {time.strftime("%H:%M:%S")}')
+     ### 从st_data_source下载原始报表
+     # reports_raw = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
+    reports_raw = get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source])
     reports = reports_raw #{k: v.copy() for k, v in reports_raw.items()}
-    # 先格式化来自(ths, em, sina)的三张原始财务报表，统一格式，方便后续进行操作
+    st.write(f'reprots_cal down {time.strftime("%H:%M:%S")}')
+
+    ### 先格式化来自(ths, em, sina)的三张原始财务报表，统一格式，方便后续进行操作
     for report_name in [BALANCE_BY_REPORT, PROFIT_BY_REPORT, CASH_BY_REPORT]:
         df = reports[report_name]
         reports[report_name] = format_report(df, df_col_maps=col_maps_dict[report_name], source=DATA_SOURCE[st_data_source])
 
-    ### ==================  计算新的数据列 计算自定义报表df ==================================
-    ### 需要的表在这里先都计算好，后面再统一进行筛选
-    ### 利润表 先计算自定义新列。然后计算 利润表-单季度df，利润表-报告期同比df， 利润表-单季度同比df'，自定义新列会被新的df继承
+    ### [利润表-报告期] 增加新列关键指标key_cols
+    # 需要的表在这里先都计算好，后面再统一进行筛选
+    # 利润表 先计算[利润表-报告期]自定义新列。然后计算 [利润表-单季度]df，[利润表-报告期同比]df， [利润表-单季度同比]df'，自定义新列会被新的df继承
     df = reports[PROFIT_BY_REPORT]
     # 银行和保险行业的报表项目与传统项目不一样，先判断是否存在列名，再进行计算
     if '营业总收入' in df.columns:
@@ -175,7 +182,7 @@ def reports_cal(reports_raw: dict, col_maps_dict: dict):
         if {'*营业利润', '营业总收入'}.issubset(df.columns):
             df['营业利润率[%]'] = df.eval('`*营业利润`/ `营业总收入` * 100')     
         if {'*净利润', '营业总收入'}.issubset(df.columns):
-            df['净利润[%]'] = df.eval('`*净利润`/ `营业总收入` * 100') 
+            df['净利润率[%]'] = df.eval('`*净利润`/ `营业总收入` * 100') 
         if {'销售费用', '营业总收入'}.issubset(df.columns):
             df['销售费用率[%]'] = df.eval('`销售费用`/ `营业总收入` * 100')
         if {'管理费用', '营业总收入'}.issubset(df.columns):
@@ -261,6 +268,7 @@ def reports_cal(reports_raw: dict, col_maps_dict: dict):
     reports[CROSS_REPORT] = df  # merge函数产生新的dataframe，需要把df再赋值回去
     # st.write( reports[CROSS_REPORT])
     # st.stop()
+    st.write(f'reprots_cal end {time.strftime("%H:%M:%S")}')
     return reports
 
 
@@ -275,7 +283,7 @@ with st.sidebar:
     # st_slide_years = st.slider()
     # st_sheet_type = st.selectbox('select sheet type')
 
-# =========================== stock list filter ================================================
+### =========================== stock list filter ================================================
 # get stock list df and df_col_maps
 with st.spinner('⏳ 正在加载表格...'):
     df_stock_list = get_stock_list()
@@ -285,33 +293,40 @@ with st.spinner('⏳ 正在加载表格...'):
 st_stock_code = st.text_input("ℹ️Please input stock code, name or initial (eg: 600519 or 贵州茅台 or gzmt):")
 
 # variable declaration under if statement for future use
-df_stock_list_filterd = pd.DataFrame()
+df_stock_list_filtered = pd.DataFrame()
 stock_selected_row = None 
 
 # filter df_stock_list with input as filter condition
 st_stock_code = st_stock_code.strip()
 if st_stock_code:
-    # filter df with input
-    # df_stock_list_filterd = df_stock_list[(df_stock_list['code'].str.contains(st_stock_code, regex=False)) | 
-    #                 df_stock_list['name'].str.contains(st_stock_code, regex=False) | df_stock_list['initial'].str.contains(st_stock_code.upper(), regex=False)]
-    query_filter_expr = (
-        "code.str.contains(@st_stock_code, regex=False, na=False) "  # don't match na
-        "or name.str.contains(@st_stock_code, regex=False, na=False) "
-        "or initial.str.contains(@st_stock_code.upper(), regex=False, na=False)"
-    )
-    df_stock_list_filterd = df_stock_list.query(query_filter_expr, engine='python')
-    df_stock_list_filterd.reset_index(drop=True, inplace=True)
-    df_stock_list_filterd.index += 1  # index for web-user should start from 1
-
+    ### 用cache_data包裹df_stock_list, 来提升执行效率。输入股票代码和df_stock_list信息，返回筛选后的股票代码
+    @st.cache_data(ttl=3600)
+    def get_df_stock_list_filterd(st_stock_code: str, df_stock_list: pd.DataFrame):
+        st_stock_code = st_stock_code
+        st.write(f'get_df_stock_list_filterd {time.strftime("%H:%M:%S")}')
+        # filter df with input
+        # df_stock_list_filtered = df_stock_list[(df_stock_list['code'].str.contains(st_stock_code, regex=False)) | 
+        #                 df_stock_list['name'].str.contains(st_stock_code, regex=False) | df_stock_list['initial'].str.contains(st_stock_code.upper(), regex=False)]
+        query_filter_expr = (
+            "code.str.contains(@st_stock_code, regex=False, na=False) "  # don't match na
+            "or name.str.contains(@st_stock_code, regex=False, na=False) "
+            "or initial.str.contains(@st_stock_code.upper(), regex=False, na=False)"
+        )
+        df_stock_list_filtered = df_stock_list.query(query_filter_expr, engine='python')
+        df_stock_list_filtered.reset_index(drop=True, inplace=True)
+        df_stock_list_filtered.index += 1  # index for web-user should start from 1
+        return df_stock_list_filtered
+    
+    df_stock_list_filtered = get_df_stock_list_filterd(st_stock_code, df_stock_list)
     # show df_stock_list_filterd if not empty else show "no stock found"
-    if not df_stock_list_filterd.empty:
-        st.success(f"✅  {len(df_stock_list_filterd)} stock codes found as bellow:")
-        st_stock_selected = st.dataframe(df_stock_list_filterd, width="stretch", 
-                     height=(len(df_stock_list_filterd)+1)*35 if len(df_stock_list_filterd)<5 else 5*35,
+    if not df_stock_list_filtered.empty:
+        st.success(f"✅  {len(df_stock_list_filtered)} stock codes found as bellow:")
+        st_stock_selected = st.dataframe(df_stock_list_filtered, width="stretch", 
+                     height=(len(df_stock_list_filtered)+1)*35 if len(df_stock_list_filtered)<5 else 5*35,
                      selection_mode=['single-row'], on_select='rerun') 
         
         # df_stock_list_filterd只有一行时，不需要手动选择行，直接返回stock_selected_row=0，
-        if len(df_stock_list_filterd) == 1:
+        if len(df_stock_list_filtered) == 1:
             stock_selected_row = 0
         
         if len(st_stock_selected["selection"]["rows"])>0:
@@ -325,18 +340,19 @@ st.markdown("---")
 if stock_selected_row is None:
     st.stop()  # don't enter bellow codes if stock is not selected
 else:
-    stock_code = df_stock_list_filterd.iloc[stock_selected_row, 0]
-    stock_name = df_stock_list_filterd.iloc[stock_selected_row, 1] 
+    stock_code = df_stock_list_filtered.iloc[stock_selected_row, 0]
+    stock_name = df_stock_list_filtered.iloc[stock_selected_row, 1] 
 
 st.subheader(f'📊 {stock_name}({stock_code}) 财务报表分析 - {st_data_source}') # get stock code by stock_selected_row
 
 
 ### ================= 下载三张原始报表，然后格式化报表，生成单季度和同比报表=================================
 with st.spinner("⏳ 正在下载数据，请稍候..."):
+    ### 下载表格的代码和计算的合并放到一个函数里面了，下面下载的语句不再需要了
     # stock_balance_sheet_by_report = get_balance_sheet_by_report(stock_code, DATA_SOURCE[st_data_source])
-    reports_raw = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
-    # 计算报表新列，生成单季度和同比报表，使用cache_data修饰提升运行性能
-    reports = reports_cal(reports_raw, col_maps_dict)
+    # reports_raw = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
+    # 使用参数stock_code和st_data_source，下载财务报表。然后，计算报表新列，生成单季度和同比报表，使用cache_data修饰提升运行性能
+    reports = reports_download_and_calculate(stock_code, st_data_source, col_maps_dict)
 st.success("✅ 数据下载完成！")
 
 
@@ -380,8 +396,10 @@ with st.sidebar:
     st_chart_height = st.slider('图表高度：', min_value=200, max_value=600, value=300, step=1)
 
 ### ===================================  对报表进行筛选 ==========================================
-### 对各报表进行筛选 1. slider年份筛选   2. 隐藏空值筛选   3. col_maps中item列筛选
+### 对各报表进行筛选 1. slider年份筛选   2. 季度筛选   3. 隐藏空值筛选   4. col_maps中item列筛选
 start_year, end_year = st_years_filter
+st.write(f'filter start {time.strftime("%H:%M:%S")}')
+
 for report_name, df in reports.items():
     # 年份筛选
     df = df[df[REPORT_DATE].dt.year.between(start_year, end_year)]
@@ -399,6 +417,7 @@ for report_name, df in reports.items():
                                 CASH_PCT_BY_REPORT, CASH_PCT_BY_QUARTER, BALANCE_PCT_BY_REPORT]:
         reports_filtered[report_name] = reports_filtered[report_name][[col for col in col_maps_dict[report_name]['item'] if col in reports_filtered[report_name].columns]]
 
+st.write(f'filter end {time.strftime("%H:%M:%S")}')
 
 ### ======================================= 数据可视化  ==========================================
 # 报表可视化category的segmented_control，使用on_change函数监测控件值，为空的话重置为前一个值
@@ -414,7 +433,6 @@ def st_category_change():
         st.session_state.st_category = st.session_state.st_category_pre
     st.session_state.st_category_pre = st.session_state.st_category
 
-# st.write(time.strftime('%H:%M:%S'))
 @st.fragment
 def show_report_category():
     # 使用st.tabs没有局部刷新功能，改变tabs下的任何控件都会执行所有tabs下的代码，切换tab不再执行任何代码，切换会快，但是改变控件会耗时。st.tabs和st.segmented_control各有利弊
