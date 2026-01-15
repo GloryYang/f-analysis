@@ -176,7 +176,8 @@ def format_report(df: pd.DataFrame, df_col_maps: pd.DataFrame, source: str='em')
 
 # return quarter report. df need to format as number, report_date_col_name need to format as pd.to_datetime
 # 由于sina没有单季度报告的数据供抓取，这里都自行进行计算
-# 注意：某些数据为na的话，计算结果也会na，有些单季度计算出来的数据可能会不准
+# 注意：某些数据为na的话，计算结果也会na，有些单季度计算出来的数据可能会不准。
+# 注意：新股某些季度值会缺失，没有考虑新股季度数值的缺失。
 def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFrame:
     df_number = df.select_dtypes(include=['float', 'int']).copy()
     # em, ths, sina的时间都是降序，所以用 diff(-1)，axis=0按行处理。所有行都减后面一行的数据。如果原始数据顺序改变，代码要修改
@@ -188,6 +189,7 @@ def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFr
     df_q = pd.concat([df[report_date_col_name], df_q], axis=1)  # 把报告期列加到最前面
     return df_q
 
+# 注意：新股某些季度值会缺失，没有考虑新股季度数值的缺失。
 def safe_yoy(series: pd.Series, periods: int =-4) -> pd.Series:
     """
     计算同比增长，安全处理零和负数。
