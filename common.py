@@ -16,7 +16,9 @@ plt.rcParams['axes.unicode_minus'] = False
 # data source used by akshare - 'shown on web': 'called by function'
 # 代码中所有source都是按照这个定义的，web上显示的可以改动，代码调用的是固定的不要改动
 DATA_SOURCE = {'ths': 'ths', 'east money': 'em', 'sina': 'sina'}
-CROSS_REPORT = '综合分析'
+CROSS_REPORT = '综合分析'  # 自定义关键指标
+CASH_CAL_REPORT = '现金流量'  # 计算的现金流量指标，收现比、净现比等
+
 PROFIT_BY_REPORT = '利润表-报告期'
 CASH_BY_REPORT = '现金流量表-报告期'
 BALANCE_BY_REPORT = '资产负债表-报告期'
@@ -38,6 +40,8 @@ BALANCE_PCT_BY_REPORT = '资产负债表-报告期同比'
 # 报告期数据 reports reports_filtered (使用st.sidebar选项过滤后的数据)，单季度数据 reports_quarter reports_quarter_filtered 
 # reports 使用多线程函数 get_all_reports_concurrently自动生成，这里不需要定义，只需要知道数据格式就行
 reports = {CROSS_REPORT: pd.DataFrame(),
+           CASH_CAL_REPORT: pd.DataFrame(),
+
            PROFIT_BY_REPORT: pd.DataFrame(),       # 经过格式化的原始数据
            CASH_BY_REPORT: pd.DataFrame(),         # 经过格式化的原始数据
            BALANCE_BY_REPORT: pd.DataFrame(),      # 经过格式化的原始数据
@@ -53,6 +57,8 @@ reports = {CROSS_REPORT: pd.DataFrame(),
            }
 # 经过sidebar选项筛选的报表数据，用于可视化显示
 reports_filtered = {CROSS_REPORT: pd.DataFrame(),
+                    CASH_CAL_REPORT: pd.DataFrame(),
+                    
                     PROFIT_BY_REPORT: pd.DataFrame(),       # 经过格式化的原始数据
                     CASH_BY_REPORT: pd.DataFrame(),         # 经过格式化的原始数据
                     BALANCE_BY_REPORT: pd.DataFrame(),      # 经过格式化的原始数据
