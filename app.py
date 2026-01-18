@@ -32,6 +32,7 @@ def get_col_maps_dict() -> dict[str, pd.DataFrame]:
                  BALANCE_PCT_BY_REPORT: 'balance',
 
                  CROSS_REPORT: 'cross',
+                 CASH_CAL_REPORT: 'cash_cal'
                  }
     # sheets_df is a dict. {sheet_name: df in each sheet}
     sheets_df_dict = pd.read_excel(r'col_maps.xlsx', sheet_name=list(sheet_map.values()), header=0)
@@ -122,7 +123,7 @@ def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd
     return results
 
 # 计算报表新列，生成单季度和同比报表, reports使用的是全局变量
-@st.cache_data(ttl=3600, show_spinner=False)
+# @st.cache_data(ttl=3600, show_spinner=False)
 def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps_dict: dict):
      ### 从st_data_source下载原始报表
      # reports_raw = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
@@ -210,9 +211,11 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     df= reports[BALANCE_BY_REPORT]
     reports[BALANCE_PCT_BY_REPORT] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
     reports[BALANCE_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[BALANCE_PCT_BY_REPORT] ], axis=1)
-
+    ######################################
     ### 计算 [综合分析] 报表。先从各原始报表中取需要的数据列，再merg和sort
-    profit_cols = [REPORT_DATE, '*营业总收入', '*毛利润', '*核心利润', '*营业利润', '*净利润', '营业成本']
+    profit_cols = [REPORT_DATE, '*营业总收入', '*毛利润', '*核心利润', '*营业利润', '*净利润', '营业成本',
+            '毛利润率[%]', '核心利润率[%]', '营业利润率[%]', '净利润率[%]',
+            '四费费率[%]', '三费费率[%]', '销售费用率[%]', '管理费用率[%]', '研发费用率[%]', '财务费用率[%]']
     balance_cols = [REPORT_DATE, '资产总计', '负债合计', '归属于母公司股东权益总计', '股东权益合计', 
                     '应收票据及应收账款', '其中:应收账款', '应收款项融资', '存货', '固定资产合计', '商誉',
                     '应付票据及应付账款', '其中:应付账款', '预收款项', '合同负债', '短期借款','长期借款', '应付债券']
@@ -288,20 +291,21 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
                 # 使用周转率计算周转天数, i为quater
                 for i in range(1, 5):
                     mask = df['quarter']==i
-                    df.loc[mask, key + '周转天数'] = df.loc[mask, key + '周转率'].map(lambda x: 360/x/4*i)
+                    df.loc[mask, key + '周转天数'] = df.loc[mask, key + '周转率'].map(lambda x: 360/x/4*i).fillna(0)
             elif col in ['存货', '其中:应付账款']:
                 df[key + '周转率'] = df['营业成本'] / df[col + '-平均']
                 # 使用周转率计算周转天数, i为quater
                 for i in range(1, 5):
                     mask = df['quarter']==i
-                    df.loc[mask, key + '周转天数'] = df.loc[mask, key + '周转率'].map(lambda x: 360/x/4*i)
-            
+                    df.loc[mask, key + '周转天数'] = df.loc[mask, key + '周转率'].map(lambda x: 360/x/4*i).fillna(0)
             # pop删除临时列
             df.pop(col + '-去年末')
             # df.pop(col + '-平均')
             # st.write(df1)
     if {'应收账款周转天数', '存货周转天数', '应付账款周转天数'}.issubset(df.columns):
         df['现金周转天数'] = df.eval('`应收账款周转天数` + `存货周转天数` - `应付账款周转天数`')
+    elif {'存货周转天数', '应付账款周转天数'}.issubset(df.columns):
+        df['现金周转天数'] = df.eval('`存货周转天数` - `应付账款周转天数`')
     # pop删除临时列
     df.pop('year')
     df.pop('quarter')
@@ -314,7 +318,6 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
         df['净利润率[%]'] = df['*净利润'] / df['*营业总收入'] * 100
     if {'资产总计-平均', '股东权益合计-平均'}.issubset(df.columns):
         df['权益乘数'] = df['资产总计-平均'] / df['股东权益合计-平均']
-
     ## 自定义列排序
     # cal_cols = [col for col in ['应收应付总额比[%]', '应收总额营收比[%]', '存货营业成本比[%]', '预收总额营收比[%]',  
     #             '有息负债', '有息负债现金等价物比[%]', '资产负债率[%]', '固定资产总资产比[%]'] if col in df.columns]
@@ -322,14 +325,38 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     #     # 第一列为报告期，关键指标依次插入到报告期后面
     #     idx += 1
     #     df.insert(idx, col, df.pop(col))
-    cross_items = col_maps_dict[CROSS_REPORT]['item'].to_list()
     # col_maps中的列放到前面，没在里面的放到后面
+    cross_items = col_maps_dict[CROSS_REPORT]['item'].to_list()
     col_orders = [c for c in cross_items if c in df.columns] + [c for c in df.columns if c not in cross_items]
     df = df[col_orders]
     reports[CROSS_REPORT] = df  # merge函数产生新的dataframe，需要把df再赋值回去
     # st.write( reports[CROSS_REPORT])
     # st.stop()
-     #####################################
+    ####################################
+    ### 计算[现金流量分析]
+    profit_cols = [REPORT_DATE, '营业总收入', '净利润', '归母净利润']
+    cash_cols = [REPORT_DATE, '销售商品、提供劳务收到的现金', '经营活动产生的现金流量净额', 
+                '投资活动产生的现金流量净额', '筹资活动产生的现金流量净额', '购建固定资产、无形资产和其他长期资产支付的现金']
+    df1 = reports[PROFIT_BY_REPORT][[c for c in profit_cols if c in reports[PROFIT_BY_REPORT].columns]]
+    df2 = reports[CASH_BY_REPORT][[c for c in cash_cols if c in reports[CASH_BY_REPORT].columns]]
+    df = pd.merge(left=df1, right=df2, how='outer', on=REPORT_DATE)
+    df = df.sort_values(by=REPORT_DATE, axis=0, ascending=False).reset_index(drop=True)
+    if {'销售商品、提供劳务收到的现金', '营业总收入'}.issubset(df.columns):
+        df['收现比'] = df['销售商品、提供劳务收到的现金'] / df['营业总收入']
+    if {'经营活动产生的现金流量净额', '净利润'}.issubset(df.columns):
+        df['净现比'] = df['经营活动产生的现金流量净额'] / df['净利润']
+    if {'经营活动产生的现金流量净额', '购建固定资产、无形资产和其他长期资产支付的现金'}.issubset(df.columns):
+        df['自由现金流'] = df['经营活动产生的现金流量净额'] - df['购建固定资产、无形资产和其他长期资产支付的现金']
+    if {'自由现金流', '营业总收入'}.issubset(df.columns):
+        df['自由现金流营收比[%]'] = df['自由现金流'] / df['营业总收入'] *100
+    if {'购建固定资产、无形资产和其他长期资产支付的现金', '净利润'}.issubset(df.columns):
+        df['资本开支利润比[%]'] = df['购建固定资产、无形资产和其他长期资产支付的现金'] / df['净利润'] * 100
+    # col_maps中的列放到前面，没在里面的放到后面
+    cross_items = col_maps_dict[CASH_CAL_REPORT]['item'].to_list()
+    col_orders = [c for c in cross_items if c in df.columns] + [c for c in df.columns if c not in cross_items]
+    df = df[col_orders]
+    reports[CASH_CAL_REPORT] = df
+    ####################################
     return reports
 
 
@@ -484,7 +511,7 @@ for report_name, df in reports.items():
 # 报表可视化category的segmented_control，使用on_change函数监测控件值，为空的话重置为前一个值
 ### 避坑：st_category默认按钮在第一次运行不会高亮。如果把session_state初始化放在最前面，中间的st.stop会打断st_category控件初始化和渲染。
 # session_state初始化需要放到这里可以解决被st.stop打断。
-CATEGORY_OPTIONS=['📋综合分析', '📊图表', '📅表格']
+CATEGORY_OPTIONS=['📋综合分析', '💰现金', '📊图表', '📅表格']
 if 'st_category' not in st.session_state:
     st.session_state.st_category = CATEGORY_OPTIONS[1]
     st.session_state.st_category_pre = st.session_state.st_category
@@ -498,15 +525,76 @@ def st_category_change():
 def show_report_category():
     # 使用st.tabs没有局部刷新功能，改变tabs下的任何控件都会执行所有tabs下的代码，切换tab不再执行任何代码，切换会快，但是改变控件会耗时。st.tabs和st.segmented_control各有利弊
     # 使用st.segmented_control 可以进行局部刷新，fragment下的控件更新只更新fragment下的代码，fragment支持子fragment，可以做到局部中的局部刷新
-    # tab1_summary, tab2_charts, tab3_tables = st.tabs(['📋综合分析', '📊图表', '📅表格'], default= '📅表格')
+    # tab1_summary, tab2_cash, tab3_charts, tab4_tables = st.tabs(['📋综合分析',  '💰现金', '📊图表', '📅表格'], default= '📅表格')
     st_category = st.segmented_control('选择显示分类：: ', key='st_category', on_change=st_category_change, options=CATEGORY_OPTIONS)
+   
+    # 综合分析
     # with tab1_summary:
     if st_category == CATEGORY_OPTIONS[0]:
-        st.dataframe()
+        report_name = CROSS_REPORT
+        df = reports_filtered[report_name]
+        df_show = df.copy()
+        # 下面进行网页显示处理
+        # df转置并设置第一行报告期为列名
+        df_show = df_show.T.map(value_to_str)
+        # 报告期设置成列名columns
+        df_show.columns = df_show.iloc[0]
+        df_show = df_show[1:]
+        st_table_selected_rows = st.dataframe(df_show, on_select='rerun',
+            column_config={
+            "_index": st.column_config.Column(
+            "报告期",  # 可以在这里设置索引列的新标题
+            width=100,  # 调整宽度，例如 "small", "medium", "large"
+            ),
+            # 也可以在这里配置其他数据列...
+            })
+        # 画出表格中选中的数据行，行row对应df的列row+1
+        if len(st_table_selected_rows['selection']['rows']) > 0:
+            for row in st_table_selected_rows['selection']['rows']:
+                if df.iloc[:,row+1].dtype not in ['float', 'int']:
+                    st.markdown(f'"{df.columns[row+1]}" 不是数值类型')
+                else:
+                    # 显示的table是df的转置，df的列对应table的行row+1
+                    fig1 = plot_bar_quarter_go(df, df.columns[row+1], title_suffix=f'[{report_name}]', height=st_chart_height)
+                    st.plotly_chart(fig1, width='stretch')
 
-    ### tab2 图表可视化
+    ### tab2 现金流量
     # with tab2_charts:
     if st_category == CATEGORY_OPTIONS[1]:
+        # code is the same with tab1
+        report_name = CASH_CAL_REPORT
+        df = reports_filtered[report_name]
+
+        # st.metric(f'销售商品、提供劳务收到的现金总额{start_year}-{end_year}', df.groupby)
+
+        df_show = df.copy()
+        # 下面进行网页显示处理
+        # df转置并设置第一行报告期为列名
+        df_show = df_show.T.map(value_to_str)
+        # 报告期设置成列名columns
+        df_show.columns = df_show.iloc[0]
+        df_show = df_show[1:]
+        st_table_selected_rows = st.dataframe(df_show, on_select='rerun',
+            column_config={
+            "_index": st.column_config.Column(
+            "报告期",  # 可以在这里设置索引列的新标题
+            width=100,  # 调整宽度，例如 "small", "medium", "large"
+            ),
+            # 也可以在这里配置其他数据列...
+            })
+        # 画出表格中选中的数据行，行row对应df的列row+1
+        if len(st_table_selected_rows['selection']['rows']) > 0:
+            for row in st_table_selected_rows['selection']['rows']:
+                if df.iloc[:,row+1].dtype not in ['float', 'int']:
+                    st.markdown(f'"{df.columns[row+1]}" 不是数值类型')
+                else:
+                    # 显示的table是df的转置，df的列对应table的行row+1
+                    fig1 = plot_bar_quarter_go(df, df.columns[row+1], title_suffix=f'[{report_name}]', height=st_chart_height)
+                    st.plotly_chart(fig1, width='stretch')
+
+    ### tab3 图表可视化
+    # with tab2_charts:
+    if st_category == CATEGORY_OPTIONS[2]:
         # 使用 segmented_control 来选择报表
         st_report_choice = st.segmented_control('选择报表：', options=[PROFIT_BY_REPORT, PROFIT_BY_QUARTER, CASH_BY_REPORT, CASH_BY_QUARTER, BALANCE_BY_REPORT], default=PROFIT_BY_QUARTER)
         # 图表 利润表-报告期 和 利润表-单季度
@@ -583,21 +671,18 @@ def show_report_category():
                     st.plotly_chart(fig2, width='stretch') 
 
 
-    # with tab3_tables:
-    if st_category == CATEGORY_OPTIONS[2]:
+    # with tab4_tables:
+    if st_category == CATEGORY_OPTIONS[3]:
         for report_name, df in reports_filtered.items():
             with st.expander(f'{report_name}'):
-                df_filtered = df
+                df_show = df.copy()
                 # 下面进行网页显示处理
-                # 格式化'报告期'列显示格式
-                df_filtered = df_filtered.map(value_to_str)
                 # df转置并设置第一行报告期为列名
-                df_filtered = df_filtered.T
+                df_show = df_show.T.map(value_to_str)
                 # 报告期设置成列名columns
-                df_filtered.columns = df_filtered.iloc[0]
-                df_filtered = df_filtered[1:]
-                # 显示，空值替换为 '-'
-                st_table_selected_rows = st.dataframe(df_filtered.map(value_to_str), on_select='rerun',
+                df_show.columns = df_show.iloc[0]
+                df_show = df_show[1:]
+                st_table_selected_rows = st.dataframe(df_show, on_select='rerun',
                     column_config={
                     "_index": st.column_config.Column(
                     "报告期",  # 可以在这里设置索引列的新标题
