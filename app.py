@@ -32,7 +32,7 @@ def get_col_maps_dict() -> dict[str, pd.DataFrame]:
                  BALANCE_PCT_BY_REPORT: 'balance',
 
                  CROSS_REPORT: 'cross',
-                 CASH_CAL_REPORT: 'cash_cal'
+                 CASH_ANALYSIS_REPORT: 'cash_cal'
                  }
     # sheets_df is a dict. {sheet_name: df in each sheet}
     sheets_df_dict = pd.read_excel(r'col_maps.xlsx', sheet_name=list(sheet_map.values()), header=0)
@@ -152,7 +152,7 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
         df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `营业成本` - `销售费用` - `管理费用` - `研发费用` - `财务费用`")
     # 2018年以前 研发费用属于管理费用，没有研发费用这一列
     elif {'营业总收入', '营业税金及附加', '营业成本', '销售费用', '管理费用', '财务费用'}.issubset(df.columns):
-        df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `营业成本` - `销售费用` - `管理费用` -  - `财务费用`")
+        df['*核心利润'] = df.eval("`营业总收入` - `营业税金及附加` - `营业成本` - `销售费用` - `管理费用` - `财务费用`")
     if '营业利润' in df.columns:
         df['*营业利润'] = df['营业利润']
     if '净利润' in df.columns:
@@ -228,6 +228,12 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     df = reports[CROSS_REPORT]
     df = pd.merge(left=df, right=df3, how='outer', on=REPORT_DATE)
     df = df.sort_values(by=REPORT_DATE, axis=0, ascending=False).reset_index(drop=True)
+    # 应收应付总额比[%] = (应收票据及应收账款 + 应收款项融资 - 应付票据及应付账款) / (应收票据及应收账款 + 应收款项融资)
+    # 应收总额营收比[%] = (应收票据及应收账款 + 应收款项融资) / 营业总收入 * 100
+    # 存货营业成本比[%] = 存货 / 营业成本 * 100
+    # 预收总额营收比[%] = (预收款项 + 合同负债) / 营业总收入 * 100
+    # 有息负债 = 短期借款 + 长期借款 + 应付债券
+    # 有息负债现金等价物比[%] = 有息负债 / 期末现金及现金等价物余额 * 100
     # 应收应付总额比[%]
     if {'应收票据及应收账款', '应收款项融资', '应付票据及应付账款'}.issubset(df.columns):
         df['应收应付总额比[%]'] = df.eval("(`应收票据及应收账款` + `应收款项融资` - `应付票据及应付账款`)/(`应收票据及应收账款` + `应收款项融资`) *100")
@@ -334,6 +340,11 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     # st.stop()
     ####################################
     ### 计算[现金流量分析]
+    # 收现比 = 销售商品、提供劳务收到的现金 / 营业总收入
+    # 净现比 = 经营活动产生的现金流量净额 / 净利润
+    # 自由现金流 = 经营活动产生的现金流量净额 - 购建固定资产、无形资产和其他长期资产支付的现金
+    # 自由现金流营收比[%] = 自由现金流 / 营业总收入
+    # 资本开支利润比[%] = 购建固定资产、无形资产和其他长期资产支付的现金 / 净利润
     profit_cols = [REPORT_DATE, '营业总收入', '净利润', '归母净利润']
     cash_cols = [REPORT_DATE, '销售商品、提供劳务收到的现金', '经营活动产生的现金流量净额', 
                 '投资活动产生的现金流量净额', '筹资活动产生的现金流量净额', '购建固定资产、无形资产和其他长期资产支付的现金']
@@ -352,10 +363,10 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     if {'购建固定资产、无形资产和其他长期资产支付的现金', '净利润'}.issubset(df.columns):
         df['资本开支利润比[%]'] = df['购建固定资产、无形资产和其他长期资产支付的现金'] / df['净利润'] * 100
     # col_maps中的列放到前面，没在里面的放到后面
-    cross_items = col_maps_dict[CASH_CAL_REPORT]['item'].to_list()
+    cross_items = col_maps_dict[CASH_ANALYSIS_REPORT]['item'].to_list()
     col_orders = [c for c in cross_items if c in df.columns] + [c for c in df.columns if c not in cross_items]
     df = df[col_orders]
-    reports[CASH_CAL_REPORT] = df
+    reports[CASH_ANALYSIS_REPORT] = df
     ####################################
     return reports
 
@@ -511,9 +522,9 @@ for report_name, df in reports.items():
 # 报表可视化category的segmented_control，使用on_change函数监测控件值，为空的话重置为前一个值
 ### 避坑：st_category默认按钮在第一次运行不会高亮。如果把session_state初始化放在最前面，中间的st.stop会打断st_category控件初始化和渲染。
 # session_state初始化需要放到这里可以解决被st.stop打断。
-CATEGORY_OPTIONS=['📋综合分析', '💰现金', '📊图表', '📅表格']
+CATEGORY_OPTIONS=['🔥常用指标', '📋综合分析', '💰现金分析', '📊图表', '📅表格', 'ℹ️公式']
 if 'st_category' not in st.session_state:
-    st.session_state.st_category = CATEGORY_OPTIONS[1]
+    st.session_state.st_category = CATEGORY_OPTIONS[0]
     st.session_state.st_category_pre = st.session_state.st_category
 def st_category_change():
     # st_category返回值是字符串
@@ -527,10 +538,57 @@ def show_report_category():
     # 使用st.segmented_control 可以进行局部刷新，fragment下的控件更新只更新fragment下的代码，fragment支持子fragment，可以做到局部中的局部刷新
     # tab1_summary, tab2_cash, tab3_charts, tab4_tables = st.tabs(['📋综合分析',  '💰现金', '📊图表', '📅表格'], default= '📅表格')
     st_category = st.segmented_control('选择显示分类：: ', key='st_category', on_change=st_category_change, options=CATEGORY_OPTIONS)
-   
-    # 综合分析
-    # with tab1_summary:
+    
+
+    ### 常用指标
     if st_category == CATEGORY_OPTIONS[0]:
+        PERFORMANCE_CHOICE = ['盈利指标', '运营指标', '杜邦分析', '现金指标']
+        st_performance_choice = st.segmented_control('选择常用指标分类：', default=PERFORMANCE_CHOICE[0] , options=PERFORMANCE_CHOICE)
+        # 盈利指标
+        if st_performance_choice == PERFORMANCE_CHOICE[0]:
+            report_name = CROSS_REPORT
+            df = reports_filtered[report_name]
+            cols = ['毛利润率[%]', '核心利润率[%]', '营业利润率[%]', '净利润率[%]', '四费费率[%]', 
+                    '销售费用率[%]', '管理费用率[%]', '研发费用率[%]','财务费用率[%]']
+            cols = [c for c in cols if c in df.columns]
+            for c in cols:
+                fig1 = plot_bar_quarter_go(df, c, title_suffix=f'[{report_name}]', height=st_chart_height)
+                st.plotly_chart(fig1, width='stretch')
+        # 运营指标
+        if st_performance_choice == PERFORMANCE_CHOICE[1]:
+            report_name = CROSS_REPORT
+            df = reports_filtered[report_name]
+            cols = ['有息负债', '有息负债现金等价物比[%]', '资产负债率[%]', '应收应付总额比[%]',  
+                    '应收总额营收比[%]', '存货营业成本比[%]', '预收总额营收比[%]', '总资产周转天数', 
+                    '固定资产周转天数', '应收账款周转天数', '应付账款周转天数', '现金周转天数']
+            cols = [c for c in cols if c in df.columns]
+            for c in cols:
+                fig1 = plot_bar_quarter_go(df, c, title_suffix=f'[{report_name}]', height=st_chart_height)
+                st.plotly_chart(fig1, width='stretch')
+        # 杜邦分析
+        if st_performance_choice == PERFORMANCE_CHOICE[2]:
+            report_name = CROSS_REPORT
+            df = reports_filtered[report_name]
+            cols = ['净利润率[%]', '总资产收益率[%]', '净资产收益率[%]', '总资产周转率', '权益乘数']
+            cols = [c for c in cols if c in df.columns]
+            for c in cols:
+                fig1 = plot_bar_quarter_go(df, c, title_suffix=f'[{report_name}]', height=st_chart_height)
+                st.plotly_chart(fig1, width='stretch')
+        # 现金指标
+        if st_performance_choice == PERFORMANCE_CHOICE[3]:
+            report_name = CASH_ANALYSIS_REPORT
+            df = reports_filtered[report_name]
+            cols = ['收现比', '净现比', '自由现金流营收比[%]', '资本开支利润比[%]', '自由现金流','购建固定资产、无形资产和其他长期资产支付的现金',
+                    '经营活动产生的现金流量净额', '投资活动产生的现金流量净额', '筹资活动产生的现金流量净额']
+            cols = [c for c in cols if c in df.columns]
+            for c in cols:
+                fig1 = plot_bar_quarter_go(df, c, title_suffix=f'[{report_name}]', height=st_chart_height)
+                st.plotly_chart(fig1, width='stretch')
+
+
+    ### 综合分析
+    # with tab1_summary:
+    if st_category == CATEGORY_OPTIONS[1]:
         report_name = CROSS_REPORT
         df = reports_filtered[report_name]
         df_show = df.copy()
@@ -558,11 +616,11 @@ def show_report_category():
                     fig1 = plot_bar_quarter_go(df, df.columns[row+1], title_suffix=f'[{report_name}]', height=st_chart_height)
                     st.plotly_chart(fig1, width='stretch')
 
-    ### tab2 现金流量
+    ### tab2 现金分析
     # with tab2_charts:
-    if st_category == CATEGORY_OPTIONS[1]:
+    if st_category == CATEGORY_OPTIONS[2]:
         # code is the same with tab1
-        report_name = CASH_CAL_REPORT
+        report_name = CASH_ANALYSIS_REPORT
         df = reports_filtered[report_name]
 
         # st.metric(f'销售商品、提供劳务收到的现金总额{start_year}-{end_year}', df.groupby)
@@ -593,10 +651,10 @@ def show_report_category():
                     st.plotly_chart(fig1, width='stretch')
 
     ### tab3 图表可视化
-    # with tab2_charts:
-    if st_category == CATEGORY_OPTIONS[2]:
+    # with tab3_charts:
+    if st_category == CATEGORY_OPTIONS[3]:
         # 使用 segmented_control 来选择报表
-        st_report_choice = st.segmented_control('选择报表：', options=[PROFIT_BY_REPORT, PROFIT_BY_QUARTER, CASH_BY_REPORT, CASH_BY_QUARTER, BALANCE_BY_REPORT], default=PROFIT_BY_QUARTER)
+        st_report_choice = st.segmented_control('选择报表：', options=[PROFIT_BY_REPORT, PROFIT_BY_QUARTER, CASH_BY_REPORT, CASH_BY_QUARTER, BALANCE_BY_REPORT], default=PROFIT_BY_REPORT)
         # 图表 利润表-报告期 和 利润表-单季度
         if st_report_choice==PROFIT_BY_REPORT or st_report_choice==PROFIT_BY_QUARTER:
             if st_report_choice==PROFIT_BY_REPORT:
@@ -615,11 +673,11 @@ def show_report_category():
             title_suffix = st_report_choice[st_report_choice.index('-')+1::]
             for col in st_selected_cols:
                 if st_cb_show_report:
-                    fig1 = plot_bar_quarter_go(df_plot1, col, title_suffix=title_suffix, height=st_chart_height)
+                    fig1 = plot_bar_quarter_go(df_plot1, col, title_suffix=f'[{title_suffix}]', height=st_chart_height)
                     st.plotly_chart(fig1, width='stretch')
                 # 有些col在主df里面有，同比计算后可能没有，需要进行判断再画
                 if st_cb_show_pct and col in df_plot2.columns:
-                    fig2 = plot_bar_quarter_go(df_plot2, col, title_suffix=title_suffix + '同比', height=st_chart_height)
+                    fig2 = plot_bar_quarter_go(df_plot2, col, title_suffix=f'[{title_suffix}同比]', height=st_chart_height)
                     st.plotly_chart(fig2, width='stretch')
 
         # 图表 现金流量表-报告期 和 现金流量表-单季度
@@ -645,7 +703,7 @@ def show_report_category():
                     fig2 = plot_bar_quarter_go(df_plot2, col, title_suffix=title_suffix + '同比', height=st_chart_height)
                     st.plotly_chart(fig2, width='stretch')
         
-        # 图表 资产负债表-报告期
+        ### 图表 资产负债表-报告期
         if st_report_choice==BALANCE_BY_REPORT:
             ### 画资产和负债的饼图
             fig1, fig2 = plot_pie_balance(col_maps_dict=col_maps_dict, df_balance=reports_filtered[BALANCE_BY_REPORT], height=400)
@@ -672,7 +730,7 @@ def show_report_category():
 
 
     # with tab4_tables:
-    if st_category == CATEGORY_OPTIONS[3]:
+    if st_category == CATEGORY_OPTIONS[4]:
         for report_name, df in reports_filtered.items():
             with st.expander(f'{report_name}'):
                 df_show = df.copy()
@@ -699,6 +757,32 @@ def show_report_category():
                             # 显示的table是df的转置，df的列对应table的行row+1
                             fig1 = plot_bar_quarter_go(df, df.columns[row+1], title_suffix=f'[{report_name}]', height=st_chart_height)
                             st.plotly_chart(fig1, width='stretch')
+    # with tab4_tables:
+    if st_category == CATEGORY_OPTIONS[5]:
+        st.write('''
+                核心利润 = 营业总收入 - 营业税金及附加  - 营业成本 - 销售费用 - 管理费用 - 财务费用<br>
+                 
+                应收应付总额比[%] = (应收票据及应收账款 + 应收款项融资 - 应付票据及应付账款) / (应收票据及应收账款 + 应收款项融资)<br>
+                应收总额营收比[%] = (应收票据及应收账款 + 应收款项融资) / 营业总收入 * 100<br>
+                存货营业成本比[%] = 存货 / 营业成本 * 100<br>
+                预收总额营收比[%] = (预收款项 + 合同负债) / 营业总收入 * 100<br>
+                有息负债 = 短期借款 + 长期借款 + 应付债券<br>
+                有息负债现金等价物比[%] = 有息负债 / 期末现金及现金等价物余额 * 100<br>
+                
+                总资产周转率 = 营业收入 / 资产总计-平均资产<br>
+                固定资产周转率 = 营业收入 / 固定资产合计-平均资产<br>
+                应收账款周转率 = 营业收入 / 应收账款-平均资产产<br>
+                存货产周转率 = 营业成本 / 存货-平均资产<br>
+                应付账款周转率 = 营业成本 / 应付账款-平均资产<br>
+                现金周转天数 = 应收周转天数 + 存货周转天数 - 应付账款周转天数<br>
+                 
+                收现比 = 销售商品、提供劳务收到的现金 / 营业总收入<br>
+                净现比 = 经营活动产生的现金流量净额 / 净利润<br>
+                自由现金流 = 经营活动产生的现金流量净额 - 购建固定资产、无形资产和其他长期资产支付的现金<br>
+                自由现金流营收比[%] = 自由现金流 / 营业总收入<br>
+                资本开支利润比[%] = 购建固定资产、无形资产和其他长期资产支付的现金 / 净利润<br>
+                ''',
+                unsafe_allow_html=True)
 
 show_report_category()
 
