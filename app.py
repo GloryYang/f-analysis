@@ -761,6 +761,8 @@ def show_report_category():
     # with tab4_tables:
     if st_category == CATEGORY_OPTIONS[5]:
         st.markdown('''
+                综合分析和现金分析的数据均来自于报告期
+        
                 核心利润 = 营业总收入 - 营业税金及附加  - 营业成本 - 销售费用 - 管理费用 - 财务费用<br>
                  
                 应收应付总额比[%] = (应收票据及应收账款 + 应收款项融资 - 应付票据及应付账款) / (应收票据及应收账款 + 应收款项融资)<br>
