@@ -122,8 +122,8 @@ def get_all_reports_concurrently(code: str, source: str = 'ths') -> dict[str, pd
     results = {report_name: results[report_name] for report_name, _, _ in tasks}
     return results
 
-# 计算报表新列，生成单季度和同比报表, reports使用的是全局变量
-# @st.cache_data(ttl=3600, show_spinner=False)
+# 计算报表新列，生成单季度和同比报表。 reports变量格式参照全局变量
+@st.cache_data(ttl=3600, show_spinner=False)
 def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps_dict: dict):
      ### 从st_data_source下载原始报表
      # reports_raw = {k: v for k, v in get_all_reports_concurrently(stock_code, DATA_SOURCE[st_data_source]).items()}
@@ -274,6 +274,7 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     # 应收账款周转率 = 营业收入 / 应收账款-平均资产
     # 存货产周转率 = 营业成本 / 存货-平均资产
     # 应付账款周转率 = 营业成本 / 应付账款-平均资产
+    # 周转天数 = 360 / 周转率 / 4 * 季度
     # 现金周转天数 = 应收周转天数 + 存货周转天数 - 应付账款周转天数
     df['year'] = df[REPORT_DATE].dt.year
     df['quarter'] = df[REPORT_DATE].dt.quarter
@@ -560,7 +561,7 @@ def show_report_category():
             df = reports_filtered[report_name]
             cols = ['有息负债', '有息负债现金等价物比[%]', '资产负债率[%]', '应收应付总额比[%]',  
                     '应收总额营收比[%]', '存货营业成本比[%]', '预收总额营收比[%]', '总资产周转天数', 
-                    '固定资产周转天数', '应收账款周转天数', '应付账款周转天数', '现金周转天数']
+                    '固定资产周转天数', '应收账款周转天数', '存货周转天数', '应付账款周转天数', '现金周转天数']
             cols = [c for c in cols if c in df.columns]
             for c in cols:
                 fig1 = plot_bar_quarter_go(df, c, title_suffix=f'[{report_name}]', height=st_chart_height)
@@ -759,7 +760,7 @@ def show_report_category():
                             st.plotly_chart(fig1, width='stretch')
     # with tab4_tables:
     if st_category == CATEGORY_OPTIONS[5]:
-        st.write('''
+        st.markdown('''
                 核心利润 = 营业总收入 - 营业税金及附加  - 营业成本 - 销售费用 - 管理费用 - 财务费用<br>
                  
                 应收应付总额比[%] = (应收票据及应收账款 + 应收款项融资 - 应付票据及应付账款) / (应收票据及应收账款 + 应收款项融资)<br>
@@ -774,6 +775,7 @@ def show_report_category():
                 应收账款周转率 = 营业收入 / 应收账款-平均资产<br>
                 存货产周转率 = 营业成本 / 存货-平均资产<br>
                 应付账款周转率 = 营业成本 / 应付账款-平均资产<br>
+                周转天数 = 360 / 周转率 / 4 * 季度<br>
                 现金周转天数 = 应收周转天数 + 存货周转天数 - 应付账款周转天数<br>
                  
                 收现比 = 销售商品、提供劳务收到的现金 / 营业总收入<br>
