@@ -195,7 +195,7 @@ def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFr
     df_q = pd.concat([df[report_date_col_name], df_q], axis=1)  # 把报告期列加到最前面
     return df_q
 
-# 注意：新股某些季度值会缺失，没有考虑新股季度数值的缺失。
+# 注意：新股某些季度值会缺失，没有考虑新股季度数值的缺失。20260217升级成calc_yoy_df函数，可以避免季度缺失问题，此函数不再使用
 def safe_yoy(series: pd.Series, periods: int =-4) -> pd.Series:
     """
     计算同比增长，安全处理零和负数。
@@ -209,7 +209,47 @@ def safe_yoy(series: pd.Series, periods: int =-4) -> pd.Series:
             return np.nan  # 避免除零
         return (current - previous) / abs(previous) * 100  # 用 abs 保证同比符号合理
     return pd.Series([calc(c, p) for c, p in zip(series, prev)], index=series.index)
-
+# 计算报表数据的同比，可以解决新股某些季度数据的缺失问题
+def calc_yoy_df(df, date_col='date'):
+    """
+    计算季度同比（YoY）
+    参数
+    ----------
+    df : DataFrame
+        原始数据，必须包含日期列 + 若干数值列
+    date_col : str
+        日期列名，默认 'date'
+    返回
+    ----------
+    yoy_df : DataFrame
+        只包含“各数据列同比”的 DataFrame（不含任何元数据列）
+    """
+    df = df.copy()
+    # df[date_col] = pd.to_datetime(df[date_col])
+    # df = df.sort_values(date_col)
+    # 提取 年、季度（内部用，不进入结果）
+    df['_year'] = df[date_col].dt.year
+    df['_quarter'] = df[date_col].dt.quarter
+    # 只选数值列（排除原数据）
+    num_cols = df.select_dtypes(include='number').columns
+    num_cols = [c for c in num_cols if c not in ['_year', '_quarter']]
+    # 构造“去年同季度”表
+    prev = df[['_year', '_quarter'] + num_cols].copy()
+    prev['_year'] += 1
+    # merge 对齐去年同季度
+    merged = df.merge(
+        prev,
+        on=['_year', '_quarter'],
+        how='left',
+        suffixes=('', '_prev')
+    )
+    # 计算同比
+    yoy_df = pd.DataFrame(index=merged.index)
+    for col in num_cols:
+        yoy_df[col] = (merged[col] - merged[col + '_prev']) / abs(merged[col + '_prev']) * 100   # 用 abs 保证同比符号合理
+    # 把date列合并到yoy_df中
+    yoy_df = pd.concat([df[date_col], yoy_df], axis=1)
+    return yoy_df
 
 def plot_bar_quarter_go(df: pd.DataFrame, col: str, title_suffix: str = '', height: int = 300) -> go.Figure:
     """
