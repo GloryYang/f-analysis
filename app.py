@@ -170,10 +170,13 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     ### 计算 [利润表-单季度]df
     reports[PROFIT_BY_QUARTER] = get_quarter_report(df, REPORT_DATE)
     ### 计算 [利润表-报告期同比]df 和 [利润表-单季度同比]df，添加报告期列，保存到reports[PROFIT_PCT_BY_REPORT]和reports[PROFIT_PCT_BY_QUARTER]
-    reports[PROFIT_PCT_BY_REPORT] = reports[PROFIT_BY_REPORT].select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[PROFIT_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_REPORT] ], axis=1)
-    reports[PROFIT_PCT_BY_QUARTER] = reports[PROFIT_BY_QUARTER].select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[PROFIT_PCT_BY_QUARTER] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_QUARTER] ], axis=1)
+    ### safe_yoy对于某些季度缺失会产生错误，更新成calc_yoy_df函数
+    # reports[PROFIT_PCT_BY_REPORT] = reports[PROFIT_BY_REPORT].select_dtypes(include=(float, int)).apply(safe_yoy)
+    # reports[PROFIT_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_REPORT] ], axis=1)
+    reports[PROFIT_PCT_BY_REPORT] = calc_yoy_df(reports[PROFIT_BY_REPORT], REPORT_DATE)
+    # reports[PROFIT_PCT_BY_QUARTER] = reports[PROFIT_BY_QUARTER].select_dtypes(include=(float, int)).apply(safe_yoy)
+    # reports[PROFIT_PCT_BY_QUARTER] = pd.concat([df[REPORT_DATE], reports[PROFIT_PCT_BY_QUARTER] ], axis=1)
+    reports[PROFIT_PCT_BY_QUARTER] = calc_yoy_df(reports[PROFIT_BY_QUARTER], REPORT_DATE)
     ### 计算 [利润表-报告期 和 利润表-单季度 的各种利润率和费用率]。这些指标不可进行同比计算，需要放到同比计算之后
     for report_name in [PROFIT_BY_REPORT, PROFIT_BY_QUARTER]:
         df = reports[report_name]
@@ -200,17 +203,20 @@ def reports_download_and_calculate(stock_code: str, st_data_source:str, col_maps
     #####################################
     ### 计算 [现金流量表-报告期同比] 
     df= reports[CASH_BY_REPORT]
-    reports[CASH_PCT_BY_REPORT] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[CASH_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[CASH_PCT_BY_REPORT] ], axis=1)
+    # reports[CASH_PCT_BY_REPORT] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
+    # reports[CASH_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[CASH_PCT_BY_REPORT] ], axis=1)
+    reports[CASH_PCT_BY_REPORT] = calc_yoy_df(reports[CASH_BY_REPORT], REPORT_DATE)
     ### 计算 [现金流量表-单季度] 和 [现金流量表-单季度同比]
     reports[CASH_BY_QUARTER] = get_quarter_report(df, REPORT_DATE)
     df= reports[CASH_BY_QUARTER]
-    reports[CASH_PCT_BY_QUARTER] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[CASH_PCT_BY_QUARTER] = pd.concat([df[REPORT_DATE], reports[CASH_PCT_BY_QUARTER] ], axis=1) 
+    # reports[CASH_PCT_BY_QUARTER] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
+    # reports[CASH_PCT_BY_QUARTER] = pd.concat([df[REPORT_DATE], reports[CASH_PCT_BY_QUARTER] ], axis=1) 
+    reports[CASH_PCT_BY_QUARTER] = calc_yoy_df(reports[CASH_BY_QUARTER], REPORT_DATE)
     ### 计算 [资产负债表-报告期同比]
     df= reports[BALANCE_BY_REPORT]
-    reports[BALANCE_PCT_BY_REPORT] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
-    reports[BALANCE_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[BALANCE_PCT_BY_REPORT] ], axis=1)
+    # reports[BALANCE_PCT_BY_REPORT] = df.select_dtypes(include=(float, int)).apply(safe_yoy)
+    # reports[BALANCE_PCT_BY_REPORT] = pd.concat([df[REPORT_DATE], reports[BALANCE_PCT_BY_REPORT] ], axis=1)
+    reports[BALANCE_PCT_BY_REPORT] = calc_yoy_df(reports[BALANCE_BY_REPORT], REPORT_DATE)
     ######################################
     ### 计算 [综合分析] 报表。先从各原始报表中取需要的数据列，再merg和sort
     profit_cols = [REPORT_DATE, '*营业总收入', '*毛利润', '*核心利润', '*营业利润', '*净利润', '营业成本',
@@ -758,11 +764,11 @@ def show_report_category():
                             # 显示的table是df的转置，df的列对应table的行row+1
                             fig1 = plot_bar_quarter_go(df, df.columns[row+1], title_suffix=f'[{report_name}]', height=st_chart_height)
                             st.plotly_chart(fig1, width='stretch')
-    # with tab4_tables:
+    # with tab5_equations:
     if st_category == CATEGORY_OPTIONS[5]:
         st.markdown('''
                 综合分析和现金分析的数据均来自于报告期
-        
+                    
                 核心利润 = 营业总收入 - 营业税金及附加  - 营业成本 - 销售费用 - 管理费用 - 财务费用<br>
                  
                 应收应付总额比[%] = (应收票据及应收账款 + 应收款项融资 - 应付票据及应付账款) / (应收票据及应收账款 + 应收款项融资)<br>
