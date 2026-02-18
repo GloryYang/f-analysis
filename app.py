@@ -739,6 +739,9 @@ def show_report_category():
     # with tab4_tables:
     if st_category == CATEGORY_OPTIONS[4]:
         for report_name, df in reports_filtered.items():
+            # CROSS_REPORT和CASH_ANALYSIS_REPORT已经单独显示了，在表格页面不再显示
+            if report_name in [CROSS_REPORT, CASH_ANALYSIS_REPORT]:
+                continue
             with st.expander(f'{report_name}'):
                 df_show = df.copy()
                 # 下面进行网页显示处理
