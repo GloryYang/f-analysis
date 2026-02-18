@@ -184,15 +184,44 @@ def format_report(df: pd.DataFrame, df_col_maps: pd.DataFrame, source: str='em')
 # 由于sina没有单季度报告的数据供抓取，这里都自行进行计算
 # 注意：某些数据为na的话，计算结果也会na，有些单季度计算出来的数据可能会不准。
 # 注意：新股某些季度值会缺失，没有考虑新股季度数值的缺失。
-def get_quarter_report(df: pd.DataFrame, report_date_col_name: str) -> pd.DataFrame:
+def get_quarter_report_old(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
     df_number = df.select_dtypes(include=['float', 'int']).copy()
     # em, ths, sina的时间都是降序，所以用 diff(-1)，axis=0按行处理。所有行都减后面一行的数据。如果原始数据顺序改变，代码要修改
     df_q = df_number.diff(-1, axis=0) 
     # 第一季度数据不需要向下减，mask_Q1筛选出第一季度的数据，把数据还原回来
-    mask_Q1 = df[report_date_col_name].dt.month == 3
+    mask_Q1 = df[date_col].dt.month == 3
     df_q[mask_Q1] = df_number[mask_Q1]   # 得到Q1行mask，恢复Q1行的数据 
     
-    df_q = pd.concat([df[report_date_col_name], df_q], axis=1)  # 把报告期列加到最前面
+    df_q = pd.concat([df[date_col], df_q], axis=1)  # 把报告期列加到最前面
+    return df_q
+# 更新单季度报表计算子函数，解决单季度数值缺失问题
+def get_quarter_report(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
+    df = df.copy()
+    # 提取 年、季度（内部用，不进入结果）
+    df['_year'] = df[date_col].dt.year
+    df['_quarter'] = df[date_col].dt.quarter
+    # 只选数值列（排除原数据）
+    num_cols = df.select_dtypes(include='number').columns
+    num_cols = [c for c in num_cols if c not in ['_year', '_quarter']]
+    # 构造“上季度”表
+    prev = df[['_year', '_quarter'] + num_cols].copy()
+    prev['_quarter'] += 1
+    # merge 对齐上一季度数据
+    merged = df.merge(
+        prev,
+        on=['_year', '_quarter'],
+        how='left',
+        suffixes=('', '_prev')
+    )
+    # 计算单季度
+    df_q = pd.DataFrame(index=merged.index)
+    for col in num_cols:
+        df_q[col] = merged[col] - merged[col + '_prev']
+    # 把date列合并到df_q中
+    df_q = pd.concat([df[date_col], df_q], axis=1)
+    # 第一季度数据不需要向下减，mask_Q1筛选出第一季度的数据，把数据还原回来
+    mask_Q1 = df[date_col].dt.month == 3
+    df_q.loc[mask_Q1, num_cols] = df.loc[mask_Q1, num_cols]   # 得到Q1行mask，恢复Q1行的数据 
     return df_q
 
 # 注意：新股某些季度值会缺失，没有考虑新股季度数值的缺失。20260217升级成calc_yoy_df函数，可以避免季度缺失问题，此函数不再使用
@@ -210,7 +239,7 @@ def safe_yoy(series: pd.Series, periods: int =-4) -> pd.Series:
         return (current - previous) / abs(previous) * 100  # 用 abs 保证同比符号合理
     return pd.Series([calc(c, p) for c, p in zip(series, prev)], index=series.index)
 # 计算报表数据的同比，可以解决新股某些季度数据的缺失问题
-def calc_yoy_df(df, date_col='date'):
+def calc_yoy_df(df: pd.DataFrame, date_col: str):
     """
     计算季度同比（YoY）
     参数
@@ -218,7 +247,7 @@ def calc_yoy_df(df, date_col='date'):
     df : DataFrame
         原始数据，必须包含日期列 + 若干数值列
     date_col : str
-        日期列名，默认 'date'
+        日期列名
     返回
     ----------
     yoy_df : DataFrame
